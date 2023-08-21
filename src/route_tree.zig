@@ -1,84 +1,39 @@
 const std = @import("std");
 
-const types = @import("./types.zig");
+pub fn RouteNode(comptime T: type) type {
+    return struct {
+        name: []const u8,
+        children: std.ArrayList(Self),
+        value: T,
 
-pub const RouteTable = struct {
-    allocator: std.mem.Allocator,
-    nodeList: std.ArrayList(*RouteNode),
+        const Self = @This();
 
-    get: RouteNode,
-
-    pub fn init(a: std.mem.Allocator) !RouteTable {
-        return RouteTable{
-            .allocator = a,
-            .nodeList = std.ArrayList(*RouteNode).init(a),
-            .get = try RouteNode.init(a, ""),
-        };
-    }
-
-    pub fn deinit(rt: *RouteTable) void {
-        // Clean up nodes
-        for (rt.nodeList.items) |np| {
-            std.log.debug("Deinitting...", .{});
-            np.deinit();
+        pub fn init(a: std.mem.Allocator, name: []const u8, value: T) !Self {
+            return Self{
+                .name = name,
+                .children = std.ArrayList(Self).init(a),
+                .value = value,
+            };
         }
-        rt.nodeList.deinit();
-    }
 
-    pub fn add(rt: *RouteTable, meth: std.http.Method, path: []const u8) !void {
-        var root = switch (meth) {
-            std.http.Method.GET => rt.get,
-            else => return error.IndexOutOfBounds,
-        };
-        var piter = std.mem.split(u8, path, "/");
-        while (piter.next()) |part| {
-            var child = try RouteNode.init(rt.allocator, part);
-            try root.addChild(child);
-            try rt.nodeList.append(&child);
-            root = child;
+        pub fn deinit(self: *Self) void {
+            self.children.deinit();
         }
-    }
 
-    pub fn resolve(rt: *RouteTable, meth: std.http.Method, path: []const u8) ?types.Handler {
-        _ = rt;
-        _ = path;
-        _ = meth;
-        return null;
-    }
-};
+        pub fn addChild(self: *Self, c: Self) !void {
+            try self.children.append(c);
+        }
 
-pub const RouteNode = struct {
-    name: std.ArrayList(u8),
-    children: std.ArrayList(RouteNode),
-    // handler: types.Handler,
-
-    pub fn init(a: std.mem.Allocator, name: []const u8) !RouteNode {
-        var n = std.ArrayList(u8).init(a);
-        try n.appendSlice(name);
-        return RouteNode{
-            .name = n,
-            .children = std.ArrayList(RouteNode).init(a),
-        };
-    }
-
-    pub fn deinit(self: *RouteNode) void {
-        self.name.deinit();
-        self.children.deinit();
-    }
-
-    pub fn addChild(self: *RouteNode, c: RouteNode) !void {
-        try self.children.append(c);
-    }
-
-    pub fn getChild(self: *RouteNode, name: []const u8) ?RouteNode {
-        for (self.children.items) |child| {
-            if (std.mem.eql(u8, child.name.items, name)) {
-                return child;
+        pub fn getChild(self: *Self, name: []const u8) ?Self {
+            for (self.children.items) |child| {
+                if (std.mem.eql(u8, child.name, name)) {
+                    return child;
+                }
             }
+            return null;
         }
-        return null;
-    }
-};
+    };
+}
 
 const t = @import("testing");
 
@@ -87,27 +42,13 @@ test "routenode" {
     defer {
         _ = gpa.deinit();
     }
-    var r = try RouteNode.init(gpa.allocator(), "foo");
+    var r = try RouteNode(i32).init(gpa.allocator(), "foo", 12);
     defer r.deinit();
-    var child = try RouteNode.init(gpa.allocator(), "bar");
+    var child = try RouteNode(i32).init(gpa.allocator(), "bar", 13);
     defer child.deinit();
 
     std.debug.assert(r.getChild("bar") == null);
 
     _ = try r.addChild(child);
-    std.debug.assert(std.mem.eql(u8, r.getChild("bar").?.name.items, child.name.items));
-}
-
-test "routing" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer {
-        _ = gpa.deinit();
-    }
-    var r = try RouteTable.init(gpa.allocator());
-    defer r.deinit();
-
-    const handler = r.resolve(std.http.Method.HEAD, "/foo");
-
-    try r.add(std.http.Method.GET, "/foo");
-    std.debug.assert(handler == null);
+    std.debug.assert(std.mem.eql(u8, r.getChild("bar").?.name, child.name));
 }
