@@ -5,6 +5,7 @@ pub fn RouteTree(comptime T: type) type {
         a: std.mem.Allocator,
         name: []const u8,
         children: std.ArrayList(*Self),
+        wildcard: bool,
         value: ?T,
 
         const Self = @This();
@@ -18,6 +19,10 @@ pub fn RouteTree(comptime T: type) type {
             self.name = buf;
             self.children = std.ArrayList(*Self).init(a);
             self.value = value;
+
+            if (buf[0] == ':') {
+                self.wildcard = true;
+            }
 
             return self;
         }
@@ -48,7 +53,7 @@ pub fn RouteTree(comptime T: type) type {
             cur.value = value;
         }
 
-        pub fn resolve(self: *Self, path: []const u8, params: std.StringHashMap([]const u8)) ?T {
+        pub fn resolve(self: *Self, path: []const u8, params: *std.StringHashMap([]const u8)) ?T {
             var it = std.mem.split(u8, path, "/");
             var cur = self;
 
@@ -58,12 +63,14 @@ pub fn RouteTree(comptime T: type) type {
                 }
                 var child = cur.getChild(part);
                 if (child != null) {
+                    if (child.?.wildcard) {
+                        params.put(child.?.name[1..], part) catch unreachable;
+                    }
                     cur = child.?;
                 } else {
                     return null;
                 }
             }
-            _ = params;
             return cur.value;
         }
 
@@ -72,23 +79,35 @@ pub fn RouteTree(comptime T: type) type {
                 if (std.mem.eql(u8, child.name, name)) {
                     return child;
                 }
+                if (child.wildcard) {
+                    std.debug.print("matched wildcard {s}\n", .{child.name});
+                    return child;
+                }
             }
             return null;
         }
     };
 }
 
-test "RouteTree" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer {
-        _ = gpa.deinit();
-    }
-    var r = try RouteTree(i32).init(gpa.allocator(), "/", 12);
+test "basic route" {
+    var r = try RouteTree(i32).init(std.testing.allocator, "/", 12);
     defer r.deinit();
 
     try r.add("/api/foo/bar", 37);
     var params = std.StringHashMap([]const u8).init(std.testing.allocator);
     defer params.deinit();
-    try std.testing.expect(r.resolve("/api/foo/bar", params) != null);
-    try std.testing.expect(r.resolve("/api/foo/bar", params).? == 37);
+    try std.testing.expect(r.resolve("/api/foo/bar", &params) != null);
+    try std.testing.expect(r.resolve("/api/foo/bar", &params).? == 37);
+}
+
+test "with params" {
+    var r = try RouteTree(i32).init(std.testing.allocator, "/", 12);
+    defer r.deinit();
+
+    try r.add("/blobs/:id", 15);
+    var params = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer params.deinit();
+    try std.testing.expect(r.resolve("/blobs/abc", &params) != null);
+    try std.testing.expect(params.get("id") != null);
+    try std.testing.expectEqualStrings("abc", params.get("id").?);
 }
