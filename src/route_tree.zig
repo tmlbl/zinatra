@@ -32,7 +32,6 @@ pub fn RouteTree(comptime T: type) type {
         }
 
         pub fn add(self: *Self, path: []const u8, value: T) !void {
-            _ = value;
             var it = std.mem.split(u8, path, "/");
             var cur = self;
 
@@ -40,28 +39,44 @@ pub fn RouteTree(comptime T: type) type {
                 if (part.len == 0) {
                     continue;
                 }
-                if (!cur.hasChild(part)) {
+                if (cur.getChild(part) == null) {
                     var new = try Self.init(self.a, part, null);
                     try cur.children.append(new);
                     cur = new;
                 }
             }
-
-            std.debug.print("leaf node: {s}\n", .{cur.name});
+            cur.value = value;
         }
 
-        fn hasChild(self: *Self, name: []const u8) bool {
-            for (self.children.items) |child| {
-                if (std.mem.eql(u8, child.name, name)) {
-                    return true;
+        pub fn resolve(self: *Self, path: []const u8, params: std.StringHashMap([]const u8)) ?T {
+            var it = std.mem.split(u8, path, "/");
+            var cur = self;
+
+            while (it.next()) |part| {
+                if (part.len == 0) {
+                    continue;
+                }
+                var child = cur.getChild(part);
+                if (child != null) {
+                    cur = child.?;
+                } else {
+                    return null;
                 }
             }
-            return false;
+            _ = params;
+            return cur.value;
+        }
+
+        fn getChild(self: *Self, name: []const u8) ?*Self {
+            for (self.children.items) |child| {
+                if (std.mem.eql(u8, child.name, name)) {
+                    return child;
+                }
+            }
+            return null;
         }
     };
 }
-
-const t = @import("testing");
 
 test "RouteTree" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -72,4 +87,8 @@ test "RouteTree" {
     defer r.deinit();
 
     try r.add("/api/foo/bar", 37);
+    var params = std.StringHashMap([]const u8).init(std.testing.allocator);
+    defer params.deinit();
+    try std.testing.expect(r.resolve("/api/foo/bar", params) != null);
+    try std.testing.expect(r.resolve("/api/foo/bar", params).? == 37);
 }
