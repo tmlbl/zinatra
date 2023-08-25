@@ -9,21 +9,26 @@ pub fn RouteTree(comptime T: type) type {
 
         const Self = @This();
 
-        pub fn init(a: std.mem.Allocator, name: []const u8, value: ?T) Self {
-            return Self{
-                .a = a,
-                .name = name,
-                .children = std.ArrayList(*Self).init(a),
-                .value = value,
-            };
+        pub fn init(a: std.mem.Allocator, name: []const u8, value: ?T) !*Self {
+            var buf = try a.alloc(u8, name.len);
+            std.mem.copy(u8, buf, name);
+
+            var self = try a.create(Self);
+            self.a = a;
+            self.name = buf;
+            self.children = std.ArrayList(*Self).init(a);
+            self.value = value;
+
+            return self;
         }
 
         pub fn deinit(self: *Self) void {
             for (self.children.items) |child| {
                 child.deinit();
-                self.a.free(child);
             }
             self.children.deinit();
+            self.a.free(self.name);
+            self.a.destroy(self);
         }
 
         pub fn add(self: *Self, path: []const u8, value: T) !void {
@@ -36,9 +41,9 @@ pub fn RouteTree(comptime T: type) type {
                     continue;
                 }
                 if (!cur.hasChild(part)) {
-                    var new = Self.init(self.a, part, null);
-                    try cur.children.append(&new);
-                    cur = &new;
+                    var new = try Self.init(self.a, part, null);
+                    try cur.children.append(new);
+                    cur = new;
                 }
             }
 
@@ -63,7 +68,7 @@ test "RouteTree" {
     defer {
         _ = gpa.deinit();
     }
-    var r = RouteTree(i32).init(gpa.allocator(), "/", 12);
+    var r = try RouteTree(i32).init(gpa.allocator(), "/", 12);
     defer r.deinit();
 
     try r.add("/api/foo/bar", 37);
