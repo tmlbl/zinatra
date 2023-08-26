@@ -64,6 +64,7 @@ pub fn RouteTree(comptime T: type) type {
                 var child = cur.getChild(part);
                 if (child != null) {
                     if (child.?.wildcard) {
+                        // TODO: graceful handling of this...
                         params.put(child.?.name[1..], part) catch unreachable;
                     }
                     cur = child.?;
