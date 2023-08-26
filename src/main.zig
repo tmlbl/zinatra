@@ -49,15 +49,12 @@ pub const App = struct {
     }
 
     fn onSigint(_: c_int) callconv(.C) void {
+        std.debug.print("thank you for interrupting...\n", .{});
         handle_requests = false;
     }
 
     fn runServer(self: *App) !void {
-        outer: while (true) {
-            if (!handle_requests) {
-                std.log.debug("i am supposed to stop", .{});
-                return;
-            }
+        outer: while (handle_requests) {
             var res = self.server.accept(.{
                 .allocator = self.allocator,
                 .header_strategy = .{ .dynamic = max_header_size },
@@ -76,29 +73,30 @@ pub const App = struct {
                     else => return err,
                 };
 
-                //self.handleRequest(&res) catch |err| {
-                //   std.debug.print("{} oops...\n", .{err});
-                //};
-                try res.do();
-                try res.writeAll("\r\nhello\r\n");
-                try res.finish();
+                self.handleRequest(&res) catch |err| {
+                    std.debug.print("{} oops...\n", .{err});
+                };
             }
         }
-        std.log.debug("stopping the server", .{});
     }
 
     fn handleRequest(app: *App, res: *std.http.Server.Response) !void {
-        _ = app;
-        // app.router.resolve(res.request.target)
-        //try res.wait();
-        std.log.debug("request: {s}", .{res.request.target});
-        //try res.do();
-        //try res.writer().writeAll("scoot");
-        //try res.finish();
-        try res.headers.append("content-type", "text/plain");
+        var params = std.StringHashMap([]const u8).init(app.allocator);
+        defer params.deinit();
+        const handler = app.router.resolve(res.request.target, &params);
+        if (handler != null) {
+            try handler.?(&res.request, res);
+        } else {
+            res.status = std.http.Status.not_found;
+            const server_body: []const u8 = "not found\n";
+            res.transfer_encoding = .{ .content_length = server_body.len };
+            try res.headers.append("content-type", "text/plain");
+            try res.headers.append("connection", "close");
+            try res.do();
 
-        try res.do();
-        try res.finish();
+            _ = try res.writer().writeAll(server_body);
+            try res.finish();
+        }
     }
 };
 
