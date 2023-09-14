@@ -7,15 +7,14 @@ pub fn main() !void {
         _ = gpa.deinit();
     }
 
-    var app = try zin.App.init(gpa.allocator());
+    var app = try zin.App.init(.{
+        .allocator = gpa.allocator(),
+    });
     defer app.deinit();
 
     try app.get("/yeah", a_handler);
 
-    const addr = try std.net.Address.parseIp4("127.0.0.1", 3737);
-
-    std.log.debug("listening on {}...", .{addr});
-    app.listen(addr) catch |err| {
+    app.listen() catch |err| {
         std.debug.print("{}\n", .{err});
     };
 }
