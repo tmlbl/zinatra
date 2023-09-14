@@ -19,15 +19,14 @@ pub fn main() !void {
     };
 }
 
-fn a_handler(req: *zin.Request, res: *zin.Response) !void {
-    _ = req;
-    res.status = std.http.Status.ok;
-    const server_body: []const u8 = "yeah buddy\n";
-    res.transfer_encoding = .{ .content_length = server_body.len };
-    try res.headers.append("content-type", "text/plain");
-    try res.headers.append("connection", "close");
-    try res.do();
+const Message = struct {
+    code: u16,
+    desc: []const u8,
+};
 
-    _ = try res.writer().writeAll(server_body);
-    try res.finish();
+fn a_handler(ctx: *zin.Context) !void {
+    try ctx.json(Message{
+        .code = 37,
+        .desc = "Some kinda message",
+    });
 }

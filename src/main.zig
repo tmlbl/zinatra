@@ -4,7 +4,28 @@ const router = @import("./route_tree.zig");
 
 pub const Request = std.http.Server.Request;
 pub const Response = std.http.Server.Response;
-pub const Handler = *const fn (*Request, *Response) anyerror!void;
+
+pub const Context = struct {
+    req: *Request,
+    res: *Response,
+    params: std.StringHashMap([]const u8),
+
+    pub fn json(self: *Context, value: anytype) !void {
+        try self.res.headers.append("Content-Type", "application/json");
+        try self.res.do();
+
+        var out = std.ArrayList(u8).init(self.res.allocator);
+        defer out.deinit();
+
+        try std.json.stringify(value, .{}, out.writer());
+
+        self.res.transfer_encoding = .{ .content_length = out.items.len };
+        try self.res.writer().writeAll(out.items);
+        try self.res.finish();
+    }
+};
+
+pub const Handler = *const fn (*Context) anyerror!void;
 
 const max_header_size = 256;
 
@@ -86,7 +107,7 @@ pub const App = struct {
                 };
 
                 self.handleRequest(&res) catch |err| {
-                    std.debug.print("{} oops...\n", .{err});
+                    std.log.err("{} {s} {}", .{ res.status, res.request.target, err });
                 };
             }
         }
@@ -97,7 +118,12 @@ pub const App = struct {
         defer params.deinit();
         const handler = app.router.resolve(res.request.target, &params);
         if (handler != null) {
-            try handler.?(&res.request, res);
+            var ctx = Context{
+                .req = &res.request,
+                .res = res,
+                .params = params,
+            };
+            try handler.?(&ctx);
         } else {
             res.status = std.http.Status.not_found;
             const server_body: []const u8 = "not found\n";
