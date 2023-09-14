@@ -81,7 +81,6 @@ pub fn RouteTree(comptime T: type) type {
                     return child;
                 }
                 if (child.wildcard) {
-                    std.debug.print("matched wildcard {s}\n", .{child.name});
                     return child;
                 }
             }
