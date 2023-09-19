@@ -1,6 +1,14 @@
 const std = @import("std");
 const zin = @import("../../src/main.zig");
 
+fn myHeader(ctx: *zin.Context) !void {
+    try ctx.res.headers.append("x-server-lang", "zig");
+}
+
+fn terminator(ctx: *zin.Context) !void {
+    try ctx.text("this request is over!");
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
@@ -11,6 +19,9 @@ pub fn main() !void {
         .allocator = gpa.allocator(),
     });
     defer app.deinit();
+
+    try app.use(myHeader);
+    try app.use(terminator);
 
     try app.get("/version", struct {
         fn handle(ctx: *zin.Context) !void {

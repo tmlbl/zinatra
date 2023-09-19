@@ -19,6 +19,7 @@ pub const Options = struct {
 
 pub const App = struct {
     allocator: std.mem.Allocator,
+    middleware: std.ArrayList(Handler),
     router: *router.RouteTree(Handler),
     server: std.http.Server,
     addr: std.net.Address,
@@ -27,6 +28,7 @@ pub const App = struct {
         var app = try opts.allocator.create(App);
 
         app.allocator = opts.allocator;
+        app.middleware = std.ArrayList(Handler).init(app.allocator);
         app.addr = try std.net.Address.parseIp4(opts.host, opts.port);
 
         app.router = try router.RouteTree(Handler).init(opts.allocator, "/", null);
@@ -42,6 +44,12 @@ pub const App = struct {
         self.server.deinit();
         self.router.deinit();
         self.allocator.destroy(self);
+    }
+
+    // Use adds a Handler function to the app as middleware, so it will run on
+    // every request
+    pub fn use(app: *App, handler: Handler) !void {
+        try app.middleware.append(handler);
     }
 
     pub fn get(app: *App, path: []const u8, handler: Handler) !void {
@@ -96,28 +104,35 @@ pub const App = struct {
         var params = std.StringHashMap([]const u8).init(app.allocator);
         defer params.deinit();
         const handler = app.router.resolve(res.request.target, &params);
+
+        // Build context
+        var ctx = Context{
+            .req = &res.request,
+            .res = res,
+            .params = params,
+        };
+
+        // Run middleware
+        for (app.middleware.items) |mw| {
+            try mw(&ctx);
+            // Check if middleware terminated the request
+            if (ctx.res.state == .finished) {
+                return;
+            }
+        }
+
         if (handler != null) {
-            var ctx = Context{
-                .req = &res.request,
-                .res = res,
-                .params = params,
-            };
             try handler.?(&ctx);
         } else {
-            res.status = std.http.Status.not_found;
-            const server_body: []const u8 = "not found\n";
-            res.transfer_encoding = .{ .content_length = server_body.len };
-            try res.headers.append("content-type", "text/plain");
-            try res.headers.append("connection", "close");
-            try res.do();
-
-            _ = try res.writer().writeAll(server_body);
-            try res.finish();
+            ctx.res.status = std.http.Status.not_found;
+            try ctx.text("not found");
         }
     }
 };
 
 test "create an app" {
-    var app = try App.init(std.testing.allocator);
+    var app = try App.init(.{
+        .allocator = std.testing.allocator,
+    });
     defer app.deinit();
 }
