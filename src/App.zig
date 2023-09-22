@@ -24,9 +24,16 @@ pub const App = struct {
     router: *router.RouteTree(Handler),
     server: std.http.Server,
     addr: std.net.Address,
+    pool: *std.Thread.Pool,
 
     pub fn init(opts: Options) !*App {
         var app = try opts.allocator.create(App);
+
+        app.pool = try opts.allocator.create(std.Thread.Pool);
+        try app.pool.init(.{
+            .allocator = opts.allocator,
+            .n_jobs = 16,
+        });
 
         app.allocator = opts.allocator;
         app.middleware = std.ArrayList(Handler).init(app.allocator);
@@ -44,6 +51,8 @@ pub const App = struct {
     pub fn deinit(self: *App) void {
         self.server.deinit();
         self.router.deinit();
+        self.pool.deinit();
+        self.allocator.destroy(self.pool);
         self.allocator.destroy(self);
     }
 
@@ -85,25 +94,19 @@ pub const App = struct {
                 }
                 return err;
             };
-            defer res.deinit();
 
-            while (res.reset() != .closing) {
-                res.wait() catch |err| switch (err) {
-                    error.HttpHeadersInvalid => continue :outer,
-                    error.EndOfStream => continue,
-                    else => return err,
-                };
+            res.wait() catch |err| switch (err) {
+                error.HttpHeadersInvalid => continue :outer,
+                error.EndOfStream => continue,
+                else => return err,
+            };
 
-                self.handleRequest(&res) catch |err| {
-                    std.log.err("{} {s} {}", .{ res.status, res.request.target, err });
-                };
-            }
+            try self.pool.spawn(handleRequest, .{ self, &res });
         }
     }
 
-    fn handleRequest(app: *App, res: *std.http.Server.Response) !void {
+    fn handleRequest(app: *App, res: *std.http.Server.Response) void {
         var params = std.StringHashMap([]const u8).init(app.allocator);
-        defer params.deinit();
         const handler = app.router.resolve(res.request.target, &params);
 
         // Build context
@@ -115,7 +118,7 @@ pub const App = struct {
 
         // Run middleware
         for (app.middleware.items) |mw| {
-            try mw(&ctx);
+            mw(&ctx) catch unreachable;
             // Check if middleware terminated the request
             if (ctx.res.state == .finished) {
                 return;
@@ -123,10 +126,10 @@ pub const App = struct {
         }
 
         if (handler != null) {
-            try handler.?(&ctx);
+            handler.?(&ctx) catch unreachable;
         } else {
             ctx.res.status = std.http.Status.not_found;
-            try ctx.text("not found");
+            ctx.text("not found") catch unreachable;
         }
     }
 };

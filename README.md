@@ -52,4 +52,3 @@ Perhaps your next "microservice" at work could be in Zig! Think about it...
 ## TODO
 
 * Multithreading
-* More router tests

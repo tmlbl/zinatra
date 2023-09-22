@@ -25,9 +25,9 @@ pub const Context = struct {
 
     pub fn text(self: *Context, msg: []const u8) !void {
         try self.res.headers.append("Content-Type", "text/plain");
-        try self.res.do();
-
         self.res.transfer_encoding = .{ .content_length = msg.len };
+
+        try self.res.do();
         try self.res.writer().writeAll(msg);
         try self.res.finish();
     }
