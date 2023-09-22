@@ -53,4 +53,3 @@ Perhaps your next "microservice" at work could be in Zig! Think about it...
 
 * Multithreading
 * More router tests
-* Middleware

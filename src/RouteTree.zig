@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const Params = std.StringHashMap([]const u8);
+
 pub fn RouteTree(comptime T: type) type {
     return struct {
         a: std.mem.Allocator,
@@ -44,16 +46,18 @@ pub fn RouteTree(comptime T: type) type {
                 if (part.len == 0) {
                     continue;
                 }
-                if (cur.getChild(part) == null) {
+                if (cur.getChild(part, true) == null) {
                     var new = try Self.init(self.a, part, null);
                     try cur.children.append(new);
                     cur = new;
+                } else {
+                    cur = cur.getChild(part, true).?;
                 }
             }
             cur.value = value;
         }
 
-        pub fn resolve(self: *Self, path: []const u8, params: *std.StringHashMap([]const u8)) ?T {
+        pub fn resolve(self: *Self, path: []const u8, params: *Params) ?T {
             var it = std.mem.split(u8, path, "/");
             var cur = self;
 
@@ -61,7 +65,7 @@ pub fn RouteTree(comptime T: type) type {
                 if (part.len == 0) {
                     continue;
                 }
-                var child = cur.getChild(part);
+                var child = cur.getChild(part, false);
                 if (child != null) {
                     if (child.?.wildcard) {
                         // TODO: graceful handling of this...
@@ -75,14 +79,18 @@ pub fn RouteTree(comptime T: type) type {
             return cur.value;
         }
 
-        fn getChild(self: *Self, name: []const u8) ?*Self {
+        fn getChild(self: *Self, name: []const u8, exact: bool) ?*Self {
+            var wild: ?*Self = null;
             for (self.children.items) |child| {
                 if (std.mem.eql(u8, child.name, name)) {
                     return child;
                 }
                 if (child.wildcard) {
-                    return child;
+                    wild = child;
                 }
+            }
+            if (wild != null and !exact) {
+                return wild.?;
             }
             return null;
         }
@@ -94,10 +102,25 @@ test "basic route" {
     defer r.deinit();
 
     try r.add("/api/foo/bar", 37);
-    var params = std.StringHashMap([]const u8).init(std.testing.allocator);
+    var params = Params.init(std.testing.allocator);
     defer params.deinit();
     try std.testing.expect(r.resolve("/api/foo/bar", &params) != null);
     try std.testing.expect(r.resolve("/api/foo/bar", &params).? == 37);
+}
+
+test "ambiguous wildcard" {
+    var r = try RouteTree(usize).init(std.testing.allocator, "/", 33);
+    defer r.deinit();
+
+    try r.add("/api/foo/bar", 77);
+    try r.add("/api/foo/:zoop", 21);
+    try r.add("/api/foo/doot", 73);
+
+    var params = Params.init(std.testing.allocator);
+    defer params.deinit();
+    try std.testing.expectEqual(r.resolve("/api/foo/bar", &params).?, 77);
+    try std.testing.expectEqual(r.resolve("/api/foo/abc", &params).?, 21);
+    try std.testing.expectEqual(r.resolve("/api/foo/doot", &params).?, 73);
 }
 
 test "with params" {
@@ -105,7 +128,7 @@ test "with params" {
     defer r.deinit();
 
     try r.add("/blobs/:id", 15);
-    var params = std.StringHashMap([]const u8).init(std.testing.allocator);
+    var params = Params.init(std.testing.allocator);
     defer params.deinit();
     try std.testing.expect(r.resolve("/blobs/abc", &params) != null);
     try std.testing.expect(params.get("id") != null);

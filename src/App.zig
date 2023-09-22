@@ -1,10 +1,11 @@
 const std = @import("std");
 
-const router = @import("./route_tree.zig");
-const context = @import("./context.zig");
+const router = @import("./RouteTree.zig");
+const context = @import("./Context.zig");
 
 pub const Context = context.Context;
-pub const Handler = *const fn (*Context) anyerror!void;
+pub const Handler = context.Handler;
+pub const Static = @import("./Static.zig");
 
 const max_header_size = 256;
 

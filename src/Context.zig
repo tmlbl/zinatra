@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub const Request = std.http.Server.Request;
 pub const Response = std.http.Server.Response;
+pub const Handler = *const fn (*Context) anyerror!void;
 
 pub const Context = struct {
     req: *Request,
