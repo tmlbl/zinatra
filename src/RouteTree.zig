@@ -57,7 +57,22 @@ pub fn RouteTree(comptime T: type) type {
             cur.value = value;
         }
 
-        pub fn resolve(self: *Self, path: []const u8, params: *Params) ?T {
+        pub fn resolve(self: *Self, target: []const u8, params: *Params) ?T {
+            var path = target;
+            const qix = std.mem.indexOf(u8, path, "?");
+            if (qix != null) {
+                path = path[1..qix.?];
+
+                // Extract query string parameters
+                var query = target[qix.? + 1 ..];
+                var pairs = std.mem.split(u8, query, "&");
+                while (pairs.next()) |pair| {
+                    const eix = std.mem.indexOf(u8, pair, "=");
+                    const key = pair[0..eix.?];
+                    const val = pair[eix.? + 1 ..];
+                    params.put(key, val) catch unreachable;
+                }
+            }
             var it = std.mem.split(u8, path, "/");
             var cur = self;
 
@@ -133,4 +148,18 @@ test "with params" {
     try std.testing.expect(r.resolve("/blobs/abc", &params) != null);
     try std.testing.expect(params.get("id") != null);
     try std.testing.expectEqualStrings("abc", params.get("id").?);
+}
+
+test "query string parameters" {
+    var r = try RouteTree(usize).init(std.testing.allocator, "/", 12);
+    defer r.deinit();
+
+    try r.add("/search", 99);
+
+    var params = Params.init(std.testing.allocator);
+    defer params.deinit();
+
+    try std.testing.expect(r.resolve("/search?q=foo&bar=baz", &params).? == 99);
+    try std.testing.expect(std.mem.eql(u8, params.get("q").?, "foo"));
+    try std.testing.expect(std.mem.eql(u8, params.get("bar").?, "baz"));
 }

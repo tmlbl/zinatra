@@ -5,6 +5,10 @@ fn myHeader(ctx: *zin.Context) !void {
     try ctx.res.headers.append("x-server-lang", "zig");
 }
 
+fn logware(ctx: *zin.Context) !void {
+    std.log.debug("{any} {s}", .{ ctx.req.method, ctx.req.target });
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
@@ -17,6 +21,7 @@ pub fn main() !void {
     defer app.deinit();
 
     try app.use(myHeader);
+    try app.use(logware);
 
     try app.get("/version", struct {
         fn handle(ctx: *zin.Context) !void {
