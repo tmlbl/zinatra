@@ -9,6 +9,11 @@ pub const Context = struct {
     res: *Response,
     params: std.StringHashMap([]const u8),
 
+    pub fn deinit(self: *Context) void {
+        self.res.deinit();
+        self.params.deinit();
+    }
+
     pub fn json(self: *Context, value: anytype) !void {
         try self.res.headers.append("Content-Type", "application/json");
         try self.res.do();

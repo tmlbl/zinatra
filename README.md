@@ -51,4 +51,5 @@ Perhaps your next "microservice" at work could be in Zig! Think about it...
 
 ## TODO
 
-* Multithreading
+* Customizable error handlers
+* Static web server

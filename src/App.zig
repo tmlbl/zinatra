@@ -115,6 +115,7 @@ pub const App = struct {
             .res = res,
             .params = params,
         };
+        defer ctx.deinit();
 
         // Run middleware
         for (app.middleware.items) |mw| {
