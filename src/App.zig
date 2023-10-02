@@ -21,7 +21,11 @@ pub const Options = struct {
 pub const App = struct {
     allocator: std.mem.Allocator,
     middleware: std.ArrayList(Handler),
-    router: *router.RouteTree(Handler),
+
+    // per-method route trees
+    get_router: *router.RouteTree(Handler),
+    post_router: *router.RouteTree(Handler),
+
     server: std.http.Server,
     addr: std.net.Address,
     pool: *std.Thread.Pool,
@@ -39,7 +43,9 @@ pub const App = struct {
         app.middleware = std.ArrayList(Handler).init(app.allocator);
         app.addr = try std.net.Address.parseIp4(opts.host, opts.port);
 
-        app.router = try router.RouteTree(Handler).init(opts.allocator, "/", null);
+        app.get_router = try router.RouteTree(Handler).init(opts.allocator, "/", null);
+        app.post_router = try router.RouteTree(Handler).init(opts.allocator, "/", null);
+
         app.server = std.http.Server.init(opts.allocator, .{
             .reuse_address = true,
             .reuse_port = true,
@@ -50,7 +56,8 @@ pub const App = struct {
 
     pub fn deinit(self: *App) void {
         self.server.deinit();
-        self.router.deinit();
+        self.get_router.deinit();
+        self.post_router.deinit();
         self.pool.deinit();
         self.allocator.destroy(self.pool);
         self.allocator.destroy(self);
@@ -63,7 +70,11 @@ pub const App = struct {
     }
 
     pub fn get(app: *App, path: []const u8, handler: Handler) !void {
-        try app.router.add(path, handler);
+        try app.get_router.add(path, handler);
+    }
+
+    pub fn post(app: *App, path: []const u8, handler: Handler) !void {
+        try app.post_router.add(path, handler);
     }
 
     pub fn listen(self: *App) !void {
@@ -107,7 +118,12 @@ pub const App = struct {
 
     fn handleRequest(app: *App, res: *std.http.Server.Response) void {
         var params = std.StringHashMap([]const u8).init(app.allocator);
-        const handler = app.router.resolve(res.request.target, &params);
+
+        const handler = switch (res.request.method) {
+            std.http.Method.GET => app.get_router.resolve(res.request.target, &params),
+            std.http.Method.POST => app.post_router.resolve(res.request.target, &params),
+            else => null,
+        };
 
         // Build context
         var ctx = Context{
