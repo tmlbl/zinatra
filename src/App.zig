@@ -15,7 +15,7 @@ var server: ?std.http.Server = null;
 pub const Options = struct {
     allocator: std.mem.Allocator,
     n_workers: u32 = 16,
-    host: []const u8 = "127.0.0.1",
+    host: []const u8 = "0.0.0.0",
     port: u16 = 3737,
 };
 
@@ -195,6 +195,6 @@ test "create an app" {
     var app = try App.init(.{
         .allocator = std.testing.allocator,
     });
-    try app.get("/greet", testHandler);
     defer app.deinit();
+    try app.get("/greet", testHandler);
 }
