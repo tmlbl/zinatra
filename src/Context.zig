@@ -7,6 +7,7 @@ pub const Response = std.http.Server.Response;
 pub const Handler = *const fn (*Context) anyerror!void;
 
 pub const Context = struct {
+    allocator: std.mem.Allocator,
     req: *Request,
     res: *Response,
     params: std.StringHashMap([]const u8),

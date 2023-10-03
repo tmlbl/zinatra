@@ -2,7 +2,9 @@ const std = @import("std");
 const zin = @import("../../src/App.zig");
 
 fn greet(ctx: *zin.Context) !void {
-    try ctx.text("Hello, world!");
+    const name = ctx.params.get("name").?;
+    const msg = try std.fmt.allocPrint(ctx.allocator, "Hello, {s}!", .{name});
+    try ctx.text(msg);
 }
 
 pub fn main() !void {
@@ -11,7 +13,7 @@ pub fn main() !void {
     });
     defer app.deinit();
 
-    try app.get("/greet", greet);
+    try app.get("/greet/:name", greet);
 
     try app.listen();
 }

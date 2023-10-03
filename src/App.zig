@@ -163,6 +163,7 @@ pub const App = struct {
 
         // Build context
         var ctx = Context{
+            .allocator = res.allocator,
             .req = &res.request,
             .res = res,
             .params = params,
