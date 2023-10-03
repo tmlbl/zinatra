@@ -14,17 +14,18 @@ var server: ?std.http.Server = null;
 
 pub const Options = struct {
     allocator: std.mem.Allocator,
+    n_workers: u32 = 16,
     host: []const u8 = "127.0.0.1",
     port: u16 = 3737,
 };
+
+const RouterMap = std.AutoHashMap(std.http.Method, *router.RouteTree(Handler));
 
 pub const App = struct {
     allocator: std.mem.Allocator,
     middleware: std.ArrayList(Handler),
 
-    // per-method route trees
-    get_router: *router.RouteTree(Handler),
-    post_router: *router.RouteTree(Handler),
+    routers: RouterMap,
 
     server: std.http.Server,
     addr: std.net.Address,
@@ -36,15 +37,14 @@ pub const App = struct {
         app.pool = try opts.allocator.create(std.Thread.Pool);
         try app.pool.init(.{
             .allocator = opts.allocator,
-            .n_jobs = 16,
+            .n_jobs = opts.n_workers,
         });
 
         app.allocator = opts.allocator;
         app.middleware = std.ArrayList(Handler).init(app.allocator);
         app.addr = try std.net.Address.parseIp4(opts.host, opts.port);
 
-        app.get_router = try router.RouteTree(Handler).init(opts.allocator, "/", null);
-        app.post_router = try router.RouteTree(Handler).init(opts.allocator, "/", null);
+        app.routers = RouterMap.init(opts.allocator);
 
         app.server = std.http.Server.init(opts.allocator, .{
             .reuse_address = true,
@@ -56,9 +56,12 @@ pub const App = struct {
 
     pub fn deinit(self: *App) void {
         self.server.deinit();
-        self.get_router.deinit();
-        self.post_router.deinit();
         self.pool.deinit();
+        var it = self.routers.iterator();
+        while (it.next()) |entry| {
+            entry.value_ptr.*.deinit();
+        }
+        self.routers.deinit();
         self.allocator.destroy(self.pool);
         self.allocator.destroy(self);
     }
@@ -69,12 +72,49 @@ pub const App = struct {
         try app.middleware.append(handler);
     }
 
+    fn addWithMethod(app: *App, m: std.http.Method, path: []const u8, h: Handler) !void {
+        if (!app.routers.contains(m)) {
+            var tree = try router.RouteTree(Handler).init(app.allocator, "/", null);
+            try app.routers.put(m, tree);
+        }
+        var tree = app.routers.get(m).?;
+        try tree.add(path, h);
+    }
+
+    fn resolveWithMethod(app: *App, m: std.http.Method, target: []const u8, params: *router.Params) ?Handler {
+        var tree = app.routers.get(m);
+        if (tree == null) {
+            return null;
+        }
+        return tree.?.resolve(target, params);
+    }
+
     pub fn get(app: *App, path: []const u8, handler: Handler) !void {
-        try app.get_router.add(path, handler);
+        try app.addWithMethod(std.http.Method.GET, path, handler);
     }
 
     pub fn post(app: *App, path: []const u8, handler: Handler) !void {
-        try app.post_router.add(path, handler);
+        try app.addWithMethod(std.http.Method.POST, path, handler);
+    }
+
+    pub fn delete(app: *App, path: []const u8, handler: Handler) !void {
+        try app.addWithMethod(std.http.Method.DELETE, path, handler);
+    }
+
+    pub fn put(app: *App, path: []const u8, handler: Handler) !void {
+        try app.addWithMethod(std.http.Method.PUT, path, handler);
+    }
+
+    pub fn patch(app: *App, path: []const u8, handler: Handler) !void {
+        try app.addWithMethod(std.http.Method.PATCH, path, handler);
+    }
+
+    pub fn head(app: *App, path: []const u8, handler: Handler) !void {
+        try app.addWithMethod(std.http.Method.HEAD, path, handler);
+    }
+
+    pub fn options(app: *App, path: []const u8, handler: Handler) !void {
+        try app.addWithMethod(std.http.Method.OPTIONS, path, handler);
     }
 
     pub fn listen(self: *App) !void {
@@ -119,11 +159,7 @@ pub const App = struct {
     fn handleRequest(app: *App, res: *std.http.Server.Response) void {
         var params = std.StringHashMap([]const u8).init(app.allocator);
 
-        const handler = switch (res.request.method) {
-            std.http.Method.GET => app.get_router.resolve(res.request.target, &params),
-            std.http.Method.POST => app.post_router.resolve(res.request.target, &params),
-            else => null,
-        };
+        const handler = app.resolveWithMethod(res.request.method, res.request.target, &params);
 
         // Build context
         var ctx = Context{
@@ -151,9 +187,14 @@ pub const App = struct {
     }
 };
 
+fn testHandler(ctx: *Context) !void {
+    try ctx.text("hello");
+}
+
 test "create an app" {
     var app = try App.init(.{
         .allocator = std.testing.allocator,
     });
+    try app.get("/greet", testHandler);
     defer app.deinit();
 }
