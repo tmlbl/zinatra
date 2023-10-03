@@ -1,8 +1,10 @@
 const std = @import("std");
 const zin = @import("../../src/App.zig");
 
-fn greet(ctx: *zin.Context) !void {
-    try ctx.text("hello");
+var static = zin.Static{};
+
+fn handleStatic(ctx: *zin.Context) !void {
+    return static.handle(ctx);
 }
 
 pub fn main() !void {
@@ -16,13 +18,9 @@ pub fn main() !void {
     var buf = try allocator.alloc(u8, 1024);
     defer allocator.free(buf);
     const cwd = try std.os.getcwd(buf);
+    static.init(cwd);
 
-    try zin.Static.init(cwd, allocator);
-    defer zin.Static.deinit();
-
-    try app.use(zin.Static.handler);
-
-    try app.get("/api", greet);
+    try app.use(handleStatic);
 
     try app.listen();
 }
