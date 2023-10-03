@@ -7,7 +7,7 @@ pub const Response = std.http.Server.Response;
 pub const Handler = *const fn (*Context) anyerror!void;
 
 pub const Context = struct {
-    allocator: std.mem.Allocator,
+    arena: std.heap.ArenaAllocator,
     req: *Request,
     res: *Response,
     params: std.StringHashMap([]const u8),
@@ -15,6 +15,11 @@ pub const Context = struct {
     pub fn deinit(self: *Context) void {
         self.res.deinit();
         self.params.deinit();
+        self.arena.deinit();
+    }
+
+    pub fn allocator(self: *Context) std.mem.Allocator {
+        return self.arena.allocator();
     }
 
     pub fn json(self: *Context, value: anytype) !void {

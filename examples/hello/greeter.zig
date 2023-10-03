@@ -5,7 +5,9 @@ const zin = @import("../../src/App.zig");
 fn greet(ctx: *zin.Context) !void {
     // params can be accessed via the built-in map
     const name = ctx.params.get("name").?;
-    const msg = try std.fmt.allocPrint(ctx.allocator, "Hello, {s}!", .{name});
+    // each context creates an arena allocator, so you can make quick
+    // per-request allocations without calling free
+    const msg = try std.fmt.allocPrint(ctx.allocator(), "Hello, {s}!", .{name});
     // Context helper methods for common response types
     try ctx.text(msg);
 }

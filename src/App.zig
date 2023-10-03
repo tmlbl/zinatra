@@ -169,7 +169,7 @@ pub const App = struct {
 
         // Build context
         var ctx = Context{
-            .allocator = res.allocator,
+            .arena = std.heap.ArenaAllocator.init(res.allocator),
             .req = &res.request,
             .res = res,
             .params = params,
