@@ -81,4 +81,14 @@ pub const Context = struct {
         }
         try self.res.finish();
     }
+
+    pub fn err(self: *Context, status: std.http.Status, msg: []const u8) !void {
+        try self.res.headers.append("Content-Type", "text/plain");
+        self.res.transfer_encoding = .{ .content_length = msg.len };
+        self.res.status = status;
+
+        try self.res.do();
+        try self.res.writer().writeAll(msg);
+        try self.res.finish();
+    }
 };
