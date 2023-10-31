@@ -24,7 +24,7 @@ pub const Context = struct {
 
     pub fn json(self: *Context, value: anytype) !void {
         try self.res.headers.append("Content-Type", "application/json");
-        try self.res.do();
+        try self.res.send();
 
         var out = std.ArrayList(u8).init(self.res.allocator);
         defer out.deinit();
@@ -40,7 +40,7 @@ pub const Context = struct {
         try self.res.headers.append("Content-Type", "text/plain");
         self.res.transfer_encoding = .{ .content_length = msg.len };
 
-        try self.res.do();
+        try self.res.send();
         try self.res.writer().writeAll(msg);
         try self.res.finish();
     }
@@ -71,7 +71,7 @@ pub const Context = struct {
         defer self.res.allocator.free(buf);
 
         // send the respone
-        try self.res.do();
+        try self.res.send();
         while (true) {
             const n_read = try f.read(buf);
             if (n_read == 0) {
@@ -82,12 +82,12 @@ pub const Context = struct {
         try self.res.finish();
     }
 
-    pub fn err(self: *Context, status: std.http.Status, msg: []const u8) !void {
+    pub fn statusText(self: *Context, status: std.http.Status, msg: []const u8) !void {
         try self.res.headers.append("Content-Type", "text/plain");
         self.res.transfer_encoding = .{ .content_length = msg.len };
         self.res.status = status;
 
-        try self.res.do();
+        try self.res.send();
         try self.res.writer().writeAll(msg);
         try self.res.finish();
     }
