@@ -7,8 +7,6 @@ pub const Context = context.Context;
 pub const Handler = context.Handler;
 pub const Static = @import("./Static.zig");
 
-const max_header_size = 256;
-
 var handle_requests = true;
 var server: ?std.http.Server = null;
 
@@ -31,15 +29,20 @@ pub const App = struct {
     server: std.http.Server,
     addr: std.net.Address,
     pool: *std.Thread.Pool,
+    single_threaded: bool,
 
     pub fn init(opts: Options) !*App {
         var app = try opts.allocator.create(App);
 
-        app.pool = try opts.allocator.create(std.Thread.Pool);
-        try app.pool.init(.{
-            .allocator = opts.allocator,
-            .n_jobs = opts.n_workers,
-        });
+        if (opts.n_workers == 1) {
+            app.single_threaded = true;
+        } else {
+            app.pool = try opts.allocator.create(std.Thread.Pool);
+            try app.pool.init(.{
+                .allocator = opts.allocator,
+                .n_jobs = opts.n_workers,
+            });
+        }
 
         app.allocator = opts.allocator;
         app.pre_middleware = std.ArrayList(Handler).init(app.allocator);
@@ -143,7 +146,6 @@ pub const App = struct {
         outer: while (handle_requests) {
             var res = self.server.accept(.{
                 .allocator = self.allocator,
-                .header_strategy = .{ .dynamic = max_header_size },
             }) catch |err| {
                 if (err == error.SocketNotListening and handle_requests == false) {
                     std.debug.print("socket not listening\n", .{});
@@ -158,7 +160,13 @@ pub const App = struct {
                 else => return err,
             };
 
-            try self.pool.spawn(handleRequest, .{ self, &res });
+            // skip the thread pool when n_workers = 1
+            if (self.single_threaded) {
+                handleRequest(self, &res);
+            } else {
+                // appears to be problems with this implementation...
+                try self.pool.spawn(handleRequest, .{ self, &res });
+            }
         }
     }
 
@@ -186,7 +194,10 @@ pub const App = struct {
         }
 
         if (handler != null) {
-            handler.?(&ctx) catch unreachable;
+            handler.?(&ctx) catch |err| {
+                std.debug.print("internal error: {}\n", .{err});
+                ctx.statusText(std.http.Status.internal_server_error, "internal error") catch unreachable;
+            };
         } else {
             ctx.res.status = std.http.Status.not_found;
             ctx.text("not found") catch unreachable;
