@@ -83,7 +83,7 @@ pub const App = struct {
 
     fn addWithMethod(app: *App, m: std.http.Method, path: []const u8, h: Handler) !void {
         if (!app.routers.contains(m)) {
-            var tree = try router.RouteTree(Handler).init(app.allocator, "/", null);
+            const tree = try router.RouteTree(Handler).init(app.allocator, "/", null);
             try app.routers.put(m, tree);
         }
         var tree = app.routers.get(m).?;

@@ -13,7 +13,7 @@ pub fn RouteTree(comptime T: type) type {
         const Self = @This();
 
         pub fn init(a: std.mem.Allocator, name: []const u8, value: ?T) !*Self {
-            var buf = try a.alloc(u8, name.len);
+            const buf = try a.alloc(u8, name.len);
             std.mem.copy(u8, buf, name);
 
             var self = try a.create(Self);
@@ -47,7 +47,7 @@ pub fn RouteTree(comptime T: type) type {
                     continue;
                 }
                 if (cur.getChild(part, true) == null) {
-                    var new = try Self.init(self.a, part, null);
+                    const new = try Self.init(self.a, part, null);
                     try cur.children.append(new);
                     cur = new;
                 } else {
@@ -64,7 +64,7 @@ pub fn RouteTree(comptime T: type) type {
                 path = path[1..qix.?];
 
                 // Extract query string parameters
-                var query = target[qix.? + 1 ..];
+                const query = target[qix.? + 1 ..];
                 var pairs = std.mem.split(u8, query, "&");
                 while (pairs.next()) |pair| {
                     const eix = std.mem.indexOf(u8, pair, "=");
