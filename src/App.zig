@@ -12,7 +12,7 @@ var server: ?std.http.Server = null;
 
 pub const Options = struct {
     allocator: std.mem.Allocator,
-    n_workers: u32 = 16,
+    n_workers: usize = 0,
     host: []const u8 = "0.0.0.0",
     port: u16 = 3737,
 };
@@ -28,26 +28,19 @@ pub const App = struct {
 
     server: std.http.Server,
     addr: std.net.Address,
-    pool: *std.Thread.Pool,
-    single_threaded: bool,
+    n_workers: usize = 1,
 
     pub fn init(opts: Options) !*App {
         var app = try opts.allocator.create(App);
-
-        if (opts.n_workers == 1) {
-            app.single_threaded = true;
-        } else {
-            app.pool = try opts.allocator.create(std.Thread.Pool);
-            try app.pool.init(.{
-                .allocator = opts.allocator,
-                .n_jobs = opts.n_workers,
-            });
-        }
 
         app.allocator = opts.allocator;
         app.pre_middleware = std.ArrayList(Handler).init(app.allocator);
         app.post_middleware = std.ArrayList(Handler).init(app.allocator);
         app.addr = try std.net.Address.parseIp4(opts.host, opts.port);
+        app.n_workers = opts.n_workers;
+        if (app.n_workers == 0) {
+            app.n_workers = try std.Thread.getCpuCount();
+        }
 
         app.routers = RouterMap.init(opts.allocator);
 
@@ -61,13 +54,11 @@ pub const App = struct {
 
     pub fn deinit(self: *App) void {
         self.server.deinit();
-        self.pool.deinit();
         var it = self.routers.iterator();
         while (it.next()) |entry| {
             entry.value_ptr.*.deinit();
         }
         self.routers.deinit();
-        self.allocator.destroy(self.pool);
         self.allocator.destroy(self);
     }
 
@@ -135,7 +126,15 @@ pub const App = struct {
 
         try self.server.listen(self.addr);
         std.log.debug("listening on {}...", .{self.addr});
-        try self.runServer();
+
+        var threads = std.ArrayList(std.Thread).init(self.allocator);
+        for (0..self.n_workers) |_| {
+            const t = try std.Thread.spawn(.{}, App.runServer, .{self});
+            try threads.append(t);
+        }
+        for (threads.items) |t| {
+            t.join();
+        }
     }
 
     fn onSigint(_: c_int) callconv(.C) void {
@@ -143,6 +142,7 @@ pub const App = struct {
     }
 
     fn runServer(self: *App) !void {
+        std.log.debug("starting thread {any}", .{std.Thread.getCurrentId()});
         outer: while (handle_requests) {
             var res = self.server.accept(.{
                 .allocator = self.allocator,
@@ -160,13 +160,8 @@ pub const App = struct {
                 else => return err,
             };
 
-            // skip the thread pool when n_workers = 1
-            if (self.single_threaded) {
-                handleRequest(self, &res);
-            } else {
-                // appears to be problems with this implementation...
-                try self.pool.spawn(handleRequest, .{ self, &res });
-            }
+            std.log.debug("handling request in thread {any}", .{std.Thread.getCurrentId()});
+            handleRequest(self, &res);
         }
     }
 
