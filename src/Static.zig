@@ -13,12 +13,18 @@ pub fn init(self: *Self, dirname: []const u8) void {
 }
 
 pub fn handle(self: *Self, ctx: *Context) !void {
-    const parts = &[_][]const u8{ self.root, ctx.req.target };
+    var target = ctx.req.target;
+    if (std.mem.eql(u8, target, "/")) {
+        target = "index.html";
+    }
+    const parts = &[_][]const u8{ self.root, target };
     const abs = try std.fs.path.join(ctx.res.allocator, parts);
     // if the file doesn't exist, fall through to other handlers
     ctx.file(abs) catch |err| {
         if (err == error.FileNotFound) {
             return;
+        } else {
+            return err;
         }
     };
 }

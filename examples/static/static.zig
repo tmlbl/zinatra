@@ -15,9 +15,11 @@ pub fn main() !void {
     });
     defer app.deinit();
 
-    var buf = try allocator.alloc(u8, 1024);
+    const buf = try allocator.alloc(u8, 1024);
     defer allocator.free(buf);
     const cwd = try std.os.getcwd(buf);
+
+    std.log.debug("serving files from {s}...", .{cwd});
     static.init(cwd);
 
     try app.use(handleStatic);
