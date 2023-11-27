@@ -67,7 +67,7 @@ pub const Context = struct {
         // allocate a transfer buffer
         // TODO: this should probably be from a buffer pool, or use one of the
         // built-in buffered writer types
-        var buf = try self.res.allocator.alloc(u8, 512);
+        var buf = try self.res.allocator.alloc(u8, std.mem.page_size);
         defer self.res.allocator.free(buf);
 
         // send the respone
