@@ -68,6 +68,10 @@ pub fn RouteTree(comptime T: type) type {
                 var pairs = std.mem.split(u8, query, "&");
                 while (pairs.next()) |pair| {
                     const eix = std.mem.indexOf(u8, pair, "=");
+                    // skip if there is no = character
+                    if (eix == null) {
+                        continue;
+                    }
                     const key = pair[0..eix.?];
                     const val = pair[eix.? + 1 ..];
                     params.put(key, val) catch unreachable;

@@ -54,7 +54,7 @@ Check out the examples folder for more functionality. Demos can be built quickly
 from the project root like so:
 
 ```
-zig build-exe examples/static/static.zig --main-pkg-path (pwd)
+zig build-exe examples/static/static.zig --main-mod-path (pwd)
 ```
 
 Perhaps your next "microservice" at work could be in Zig! Think about it...

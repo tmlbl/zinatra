@@ -160,7 +160,6 @@ pub const App = struct {
                 else => return err,
             };
 
-            std.log.debug("handling request in thread {any}", .{std.Thread.getCurrentId()});
             handleRequest(self, &res);
         }
     }
