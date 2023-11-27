@@ -2,6 +2,7 @@ const std = @import("std");
 
 const router = @import("./RouteTree.zig");
 const context = @import("./Context.zig");
+pub const mw = @import("./middleware.zig");
 
 pub const Context = context.Context;
 pub const Handler = context.Handler;
@@ -192,8 +193,8 @@ pub const App = struct {
         defer ctx.deinit();
 
         // Run middleware
-        for (app.pre_middleware.items) |mw| {
-            mw(&ctx) catch |e| {
+        for (app.pre_middleware.items) |m| {
+            m(&ctx) catch |e| {
                 app.errorHandler(&ctx, e) catch unreachable;
             };
             // Check if middleware terminated the request
@@ -211,8 +212,8 @@ pub const App = struct {
             ctx.text("not found") catch unreachable;
         }
 
-        for (app.post_middleware.items) |mw| {
-            mw(&ctx) catch |e| {
+        for (app.post_middleware.items) |m| {
+            m(&ctx) catch |e| {
                 app.errorHandler(&ctx, e) catch unreachable;
             };
         }

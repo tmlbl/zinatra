@@ -62,20 +62,6 @@ pub fn RouteTree(comptime T: type) type {
             const qix = std.mem.indexOf(u8, path, "?");
             if (qix != null) {
                 path = path[1..qix.?];
-
-                // Extract query string parameters
-                const query = target[qix.? + 1 ..];
-                var pairs = std.mem.split(u8, query, "&");
-                while (pairs.next()) |pair| {
-                    const eix = std.mem.indexOf(u8, pair, "=");
-                    // skip if there is no = character
-                    if (eix == null) {
-                        continue;
-                    }
-                    const key = pair[0..eix.?];
-                    const val = pair[eix.? + 1 ..];
-                    params.put(key, val) catch unreachable;
-                }
             }
             var it = std.mem.split(u8, path, "/");
             var cur = self;
@@ -87,7 +73,6 @@ pub fn RouteTree(comptime T: type) type {
                 var child = cur.getChild(part, false);
                 if (child != null) {
                     if (child.?.wildcard) {
-                        // TODO: graceful handling of this...
                         params.put(child.?.name[1..], part) catch unreachable;
                     }
                     cur = child.?;

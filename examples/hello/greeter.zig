@@ -33,6 +33,8 @@ pub fn main() !void {
     });
     defer app.deinit();
 
+    try app.use(zin.mw.queryStringParser);
+
     try app.use(defaultHeaders);
 
     try app.get("/greet/:name", greet);
