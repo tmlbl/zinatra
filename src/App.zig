@@ -5,6 +5,7 @@ const context = @import("./Context.zig");
 
 pub const Context = context.Context;
 pub const Handler = context.Handler;
+pub const ErrorHandler = *const fn (*Context, anyerror) anyerror!void;
 pub const Static = @import("./Static.zig");
 
 var handle_requests = true;
@@ -15,7 +16,17 @@ pub const Options = struct {
     n_workers: usize = 0,
     host: []const u8 = "0.0.0.0",
     port: u16 = 3737,
+    errorHandler: ErrorHandler = defaultErrorHandler,
 };
+
+fn defaultErrorHandler(ctx: *Context, err: anyerror) !void {
+    const msg = try std.fmt.allocPrint(
+        ctx.allocator(),
+        "internal error: {any}",
+        .{err},
+    );
+    try ctx.statusText(std.http.Status.internal_server_error, msg);
+}
 
 const RouterMap = std.AutoHashMap(std.http.Method, *router.RouteTree(Handler));
 
@@ -23,6 +34,7 @@ pub const App = struct {
     allocator: std.mem.Allocator,
     pre_middleware: std.ArrayList(Handler),
     post_middleware: std.ArrayList(Handler),
+    errorHandler: ErrorHandler,
 
     routers: RouterMap,
 
@@ -36,6 +48,7 @@ pub const App = struct {
         app.allocator = opts.allocator;
         app.pre_middleware = std.ArrayList(Handler).init(app.allocator);
         app.post_middleware = std.ArrayList(Handler).init(app.allocator);
+        app.errorHandler = opts.errorHandler;
         app.addr = try std.net.Address.parseIp4(opts.host, opts.port);
         app.n_workers = opts.n_workers;
         if (app.n_workers == 0) {
@@ -180,7 +193,9 @@ pub const App = struct {
 
         // Run middleware
         for (app.pre_middleware.items) |mw| {
-            mw(&ctx) catch unreachable;
+            mw(&ctx) catch |e| {
+                app.errorHandler(&ctx, e) catch unreachable;
+            };
             // Check if middleware terminated the request
             if (ctx.res.state == .finished) {
                 return;
@@ -188,9 +203,8 @@ pub const App = struct {
         }
 
         if (handler != null) {
-            handler.?(&ctx) catch |err| {
-                std.debug.print("internal error: {}\n", .{err});
-                ctx.statusText(std.http.Status.internal_server_error, "internal error") catch unreachable;
+            handler.?(&ctx) catch |e| {
+                app.errorHandler(&ctx, e) catch unreachable;
             };
         } else {
             ctx.res.status = std.http.Status.not_found;
@@ -198,7 +212,9 @@ pub const App = struct {
         }
 
         for (app.post_middleware.items) |mw| {
-            mw(&ctx) catch unreachable;
+            mw(&ctx) catch |e| {
+                app.errorHandler(&ctx, e) catch unreachable;
+            };
         }
     }
 };
