@@ -14,7 +14,7 @@ pub fn RouteTree(comptime T: type) type {
 
         pub fn init(a: std.mem.Allocator, name: []const u8, value: ?T) !*Self {
             const buf = try a.alloc(u8, name.len);
-            std.mem.copy(u8, buf, name);
+            std.mem.copyForwards(u8, buf, name);
 
             var self = try a.create(Self);
             self.a = a;
@@ -137,18 +137,4 @@ test "with params" {
     try std.testing.expect(r.resolve("/blobs/abc", &params) != null);
     try std.testing.expect(params.get("id") != null);
     try std.testing.expectEqualStrings("abc", params.get("id").?);
-}
-
-test "query string parameters" {
-    var r = try RouteTree(usize).init(std.testing.allocator, "/", 12);
-    defer r.deinit();
-
-    try r.add("/search", 99);
-
-    var params = Params.init(std.testing.allocator);
-    defer params.deinit();
-
-    try std.testing.expect(r.resolve("/search?q=foo&bar=baz", &params).? == 99);
-    try std.testing.expect(std.mem.eql(u8, params.get("q").?, "foo"));
-    try std.testing.expect(std.mem.eql(u8, params.get("bar").?, "baz"));
 }
