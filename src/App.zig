@@ -58,7 +58,7 @@ pub const App = struct {
 
         app.routers = RouterMap.init(opts.allocator);
 
-        app.server = std.http.Server.init(opts.allocator, .{
+        app.server = std.http.Server.init(.{
             .reuse_address = true,
             .reuse_port = true,
         });
