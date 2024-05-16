@@ -10,7 +10,6 @@ pub const ErrorHandler = *const fn (*Context, anyerror) anyerror!void;
 pub const Static = @import("./Static.zig");
 
 var handle_requests = true;
-var server: ?std.http.Server = null;
 
 pub const Options = struct {
     allocator: std.mem.Allocator,
@@ -39,7 +38,7 @@ pub const App = struct {
 
     routers: RouterMap,
 
-    server: std.http.Server,
+    read_buffer: []u8,
     addr: std.net.Address,
     n_workers: usize = 1,
 
@@ -58,16 +57,20 @@ pub const App = struct {
 
         app.routers = RouterMap.init(opts.allocator);
 
-        app.server = std.http.Server.init(.{
-            .reuse_address = true,
-            .reuse_port = true,
-        });
-        server = app.server;
+        // const stream = try std.net.tcpConnectToAddress(app.addr);
+        // app.read_buffer = try app.allocator.alloc(u8, 4096);
+
+        // app.server = std.http.Server.init(.{
+        //     .stream = stream,
+        //     .address = app.addr,
+        // }, app.read_buffer);
+        // server = app.server;
         return app;
     }
 
     pub fn deinit(self: *App) void {
-        self.server.deinit();
+        // self.server.connection.stream.close();
+        self.allocator.free(self.read_buffer);
         var it = self.routers.iterator();
         while (it.next()) |entry| {
             entry.value_ptr.*.deinit();
@@ -132,63 +135,52 @@ pub const App = struct {
     }
 
     pub fn listen(self: *App) !void {
-        try std.os.sigaction(std.os.SIG.INT, &.{
+        _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &.{
             .handler = .{ .handler = &App.onSigint },
-            .mask = std.os.empty_sigset,
-            .flags = (std.os.SA.SIGINFO | std.os.SA.RESTART),
+            .mask = std.os.linux.empty_sigset,
+            .flags = (std.os.linux.SA.SIGINFO | std.os.linux.SA.RESTART),
         }, null);
 
-        try self.server.listen(self.addr);
+        var listener = try self.addr.listen(.{
+            .reuse_address = true,
+        });
         std.log.debug("listening on {}...", .{self.addr});
 
-        var threads = std.ArrayList(std.Thread).init(self.allocator);
-        for (0..self.n_workers) |_| {
-            const t = try std.Thread.spawn(.{}, App.runServer, .{self});
-            try threads.append(t);
+        self.read_buffer = try self.allocator.alloc(u8, 4096);
+
+        while (handle_requests) {
+            const conn = try listener.accept();
+            var server = std.http.Server.init(conn, self.read_buffer);
+            var req = try server.receiveHead();
+            handleRequest(self, &req);
         }
-        for (threads.items) |t| {
-            t.join();
-        }
+
+        // var threads = std.ArrayList(std.Thread).init(self.allocator);
+        // for (0..self.n_workers) |_| {
+        //     const t = try std.Thread.spawn(.{}, App.runServer, .{self});
+        //     try threads.append(t);
+        // }
+        // for (threads.items) |t| {
+        //     t.join();
+        // }
     }
 
     fn onSigint(_: c_int) callconv(.C) void {
-        std.os.exit(0);
+        std.os.linux.exit(0);
     }
 
-    fn runServer(self: *App) !void {
-        std.log.debug("starting thread {any}", .{std.Thread.getCurrentId()});
-        outer: while (handle_requests) {
-            var res = self.server.accept(.{
-                .allocator = self.allocator,
-            }) catch |err| {
-                if (err == error.SocketNotListening and handle_requests == false) {
-                    std.debug.print("socket not listening\n", .{});
-                    break;
-                }
-                return err;
-            };
-
-            res.wait() catch |err| switch (err) {
-                error.HttpHeadersInvalid => continue :outer,
-                error.EndOfStream => continue,
-                else => return err,
-            };
-
-            handleRequest(self, &res);
-        }
-    }
-
-    fn handleRequest(app: *App, res: *std.http.Server.Response) void {
+    fn handleRequest(app: *App, req: *std.http.Server.Request) void {
         var params = std.StringHashMap([]const u8).init(app.allocator);
 
-        const handler = app.resolveWithMethod(res.request.method, res.request.target, &params);
+        const handler = app.resolveWithMethod(req.head.method, req.head.target, &params);
 
         // Build context
+        var arena = std.heap.ArenaAllocator.init(app.allocator);
         var ctx = Context{
-            .arena = std.heap.ArenaAllocator.init(res.allocator),
-            .req = &res.request,
-            .res = res,
+            .arena = arena,
+            .req = req,
             .params = params,
+            .headers = std.ArrayList(std.http.Header).init(arena.allocator()),
         };
         defer ctx.deinit();
 
@@ -198,7 +190,7 @@ pub const App = struct {
                 app.errorHandler(&ctx, e) catch unreachable;
             };
             // Check if middleware terminated the request
-            if (ctx.res.state == .finished) {
+            if (ctx.req.server.state == .ready) {
                 return;
             }
         }
@@ -208,8 +200,7 @@ pub const App = struct {
                 app.errorHandler(&ctx, e) catch unreachable;
             };
         } else {
-            ctx.res.status = std.http.Status.not_found;
-            ctx.text("not found") catch unreachable;
+            ctx.statusText(std.http.Status.not_found, "not found") catch unreachable;
         }
 
         for (app.post_middleware.items) |m| {

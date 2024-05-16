@@ -9,12 +9,12 @@ pub const Handler = *const fn (*Context) anyerror!void;
 pub const Context = struct {
     arena: std.heap.ArenaAllocator,
     req: *Request,
-    res: *Response,
     params: std.StringHashMap([]const u8),
+    headers: std.ArrayList(std.http.Header),
 
     pub fn deinit(self: *Context) void {
-        self.res.deinit();
         self.params.deinit();
+        self.headers.deinit();
         self.arena.deinit();
     }
 
@@ -23,8 +23,7 @@ pub const Context = struct {
     }
 
     pub fn json(self: *Context, value: anytype) !void {
-        try self.res.headers.append("Content-Type", "application/json");
-        try self.res.send();
+        try self.res.writeAll("Content-Type: application/json\n");
 
         var out = std.ArrayList(u8).init(self.res.allocator);
         defer out.deinit();
@@ -33,16 +32,15 @@ pub const Context = struct {
 
         self.res.transfer_encoding = .{ .content_length = out.items.len };
         try self.res.writer().writeAll(out.items);
-        try self.res.finish();
+        try self.res.flush();
+        try self.res.end();
     }
 
     pub fn text(self: *Context, msg: []const u8) !void {
-        try self.res.headers.append("Content-Type", "text/plain");
-        self.res.transfer_encoding = .{ .content_length = msg.len };
-
-        try self.res.send();
-        try self.res.writer().writeAll(msg);
-        try self.res.finish();
+        try self.headers.append(.{ .name = "Content-Type", .value = "text/plain" });
+        try self.req.respond(msg, .{
+            .extra_headers = self.headers.items,
+        });
     }
 
     pub fn file(self: *Context, path: []const u8) !void {
@@ -61,7 +59,9 @@ pub const Context = struct {
         const suffix = std.fs.path.extension(path);
         const mt = mime.getMimeMap().get(suffix);
         if (mt != null) {
-            try self.res.headers.append("Content-Type", mt.?);
+            try self.res.write("Content-Type: ");
+            try self.res.write(mt.?);
+            try self.res.write("\n");
         }
 
         // allocate a transfer buffer
@@ -83,12 +83,11 @@ pub const Context = struct {
     }
 
     pub fn statusText(self: *Context, status: std.http.Status, msg: []const u8) !void {
-        try self.res.headers.append("Content-Type", "text/plain");
-        self.res.transfer_encoding = .{ .content_length = msg.len };
-        self.res.status = status;
-
-        try self.res.send();
-        try self.res.writer().writeAll(msg);
-        try self.res.finish();
+        try self.req.respond(msg, .{
+            .status = status,
+            .extra_headers = &.{
+                .{ .name = "Content-Type", .value = "text/plain" },
+            },
+        });
     }
 };

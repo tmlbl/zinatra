@@ -6,13 +6,13 @@ const context = @import("./Context.zig");
 // If a query string parameter has the same name as a route parameter, or is a
 // duplicate, it will be ignored
 pub fn queryStringParser(ctx: *context.Context) !void {
-    var path = ctx.req.target;
+    var path = ctx.req.head.target;
     const qix = std.mem.indexOf(u8, path, "?");
     if (qix != null) {
         path = path[1..qix.?];
 
         // Extract query string parameters
-        const query = ctx.req.target[qix.? + 1 ..];
+        const query = ctx.req.head.target[qix.? + 1 ..];
         var pairs = std.mem.split(u8, query, "&");
         while (pairs.next()) |pair| {
             const eix = std.mem.indexOf(u8, pair, "=");

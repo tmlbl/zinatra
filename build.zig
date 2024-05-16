@@ -16,14 +16,13 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     _ = b.addModule("zinatra", .{
-        .source_file = .{ .path = "src/App.zig" },
-        .dependencies = &[_]std.Build.ModuleDependency{},
+        .root_source_file = .{ .cwd_relative = "src/App.zig" },
     });
 
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
     const main_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/App.zig" },
+        .root_source_file = .{ .cwd_relative = "src/App.zig" },
         .target = target,
         .optimize = optimize,
     });
