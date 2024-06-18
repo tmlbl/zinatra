@@ -35,6 +35,7 @@ pub const App = struct {
     pre_middleware: std.ArrayList(Handler),
     post_middleware: std.ArrayList(Handler),
     errorHandler: ErrorHandler,
+    listener: std.net.Server,
 
     routers: RouterMap,
 
@@ -57,19 +58,12 @@ pub const App = struct {
 
         app.routers = RouterMap.init(opts.allocator);
 
-        // const stream = try std.net.tcpConnectToAddress(app.addr);
-        // app.read_buffer = try app.allocator.alloc(u8, 4096);
+        app.read_buffer = try app.allocator.alloc(u8, 4096);
 
-        // app.server = std.http.Server.init(.{
-        //     .stream = stream,
-        //     .address = app.addr,
-        // }, app.read_buffer);
-        // server = app.server;
         return app;
     }
 
     pub fn deinit(self: *App) void {
-        // self.server.connection.stream.close();
         self.allocator.free(self.read_buffer);
         var it = self.routers.iterator();
         while (it.next()) |entry| {
@@ -141,32 +135,34 @@ pub const App = struct {
             .flags = (std.os.linux.SA.SIGINFO | std.os.linux.SA.RESTART),
         }, null);
 
-        var listener = try self.addr.listen(.{
+        self.listener = try self.addr.listen(.{
             .reuse_address = true,
         });
         std.log.debug("listening on {}...", .{self.addr});
 
         self.read_buffer = try self.allocator.alloc(u8, 4096);
 
+        var threads = std.ArrayList(std.Thread).init(self.allocator);
+        for (0..self.n_workers) |_| {
+            const t = try std.Thread.spawn(.{}, App.runServer, .{self});
+            try threads.append(t);
+        }
+        for (threads.items) |t| {
+            t.join();
+        }
+    }
+
+    fn runServer(self: *App) !void {
         while (handle_requests) {
-            const conn = try listener.accept();
+            const conn = try self.listener.accept();
             var server = std.http.Server.init(conn, self.read_buffer);
             var req = try server.receiveHead();
             handleRequest(self, &req);
         }
-
-        // var threads = std.ArrayList(std.Thread).init(self.allocator);
-        // for (0..self.n_workers) |_| {
-        //     const t = try std.Thread.spawn(.{}, App.runServer, .{self});
-        //     try threads.append(t);
-        // }
-        // for (threads.items) |t| {
-        //     t.join();
-        // }
     }
 
     fn onSigint(_: c_int) callconv(.C) void {
-        std.os.linux.exit(0);
+        std.os.linux.exit_group(0);
     }
 
     fn handleRequest(app: *App, req: *std.http.Server.Request) void {

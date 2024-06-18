@@ -19,19 +19,16 @@ fn greet(ctx: *zin.Context) !void {
     try ctx.text(msg);
 }
 
-// middleware functions are also of the type zin.Handler, they just don't call
-// ctx.res.finish()
-fn defaultHeaders(ctx: *zin.Context) !void {
-    try ctx.res.headers.append("server", "zin/v0.1.0");
+// zin.Context provides shortcuts for common cases, like sending JSON
+fn sendJson(ctx: *zin.Context) !void {
+    try ctx.json(.{
+        .foo = "bar",
+    });
 }
 
-// middleware functions can access properties of the response after handlers run
-// when added with App.after
-fn logger(ctx: *zin.Context) !void {
-    const time = std.time.milliTimestamp();
-    const method = @tagName(ctx.req.method);
-    const status = @tagName(ctx.res.status);
-    std.log.debug("{d} {s} {s} {s}", .{ time, method, ctx.req.target, status });
+// Middleware functions have the same function signature as route handlers
+fn defaultHeaders(ctx: *zin.Context) !void {
+    try ctx.headers.append(.{ .name = "server", .value = "zin/v0.1.0" });
 }
 
 pub fn main() !void {
@@ -40,25 +37,21 @@ pub fn main() !void {
     });
     defer app.deinit();
 
+    // optionally add query string parameters to route parameters map
+    try app.use(zin.mw.queryStringParser);
+
     try app.use(defaultHeaders);
 
+    // use classic route templating syntax to register handlers
     try app.get("/greet/:name", greet);
 
-    try app.after(logger);
+    try app.get("/json", sendJson);
 
     try app.listen();
 }
-```
-
-Check out the examples folder for more functionality. Demos can be built quickly
-from the project root like so:
 
 ```
-zig build-exe examples/static/static.zig --main-mod-path (pwd)
-```
+
+Check out the examples folder for more functionality.
 
 Perhaps your next "microservice" at work could be in Zig! Think about it...
-
-## TODO
-
-* Customizable not found and internal error handlers

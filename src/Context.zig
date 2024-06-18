@@ -23,24 +23,20 @@ pub const Context = struct {
     }
 
     pub fn json(self: *Context, value: anytype) !void {
-        try self.res.writeAll("Content-Type: application/json\n");
+        try self.headers.append(.{ .name = "Content-Type", .value = "application/json" });
 
-        var out = std.ArrayList(u8).init(self.res.allocator);
+        var out = std.ArrayList(u8).init(self.allocator());
         defer out.deinit();
 
         try std.json.stringify(value, .{}, out.writer());
 
-        self.res.transfer_encoding = .{ .content_length = out.items.len };
-        try self.res.writer().writeAll(out.items);
-        try self.res.flush();
-        try self.res.end();
+        try self.req.respond(out.items, .{
+            .extra_headers = self.headers.items,
+        });
     }
 
     pub fn text(self: *Context, msg: []const u8) !void {
-        try self.headers.append(.{ .name = "Content-Type", .value = "text/plain" });
-        try self.req.respond(msg, .{
-            .extra_headers = self.headers.items,
-        });
+        try self.statusText(std.http.Status.ok, msg);
     }
 
     pub fn file(self: *Context, path: []const u8) !void {

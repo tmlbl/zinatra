@@ -12,6 +12,14 @@ fn greet(ctx: *zin.Context) !void {
     try ctx.text(msg);
 }
 
+// zin.Context provides shortcuts for common cases, like sending JSON
+fn sendJson(ctx: *zin.Context) !void {
+    try ctx.json(.{
+        .foo = "bar",
+    });
+}
+
+// Middleware functions have the same function signature as route handlers
 fn defaultHeaders(ctx: *zin.Context) !void {
     try ctx.headers.append(.{ .name = "server", .value = "zin/v0.1.0" });
 }
@@ -22,11 +30,15 @@ pub fn main() !void {
     });
     defer app.deinit();
 
+    // optionally add query string parameters to route parameters map
     try app.use(zin.mw.queryStringParser);
 
     try app.use(defaultHeaders);
 
+    // use classic route templating syntax to register handlers
     try app.get("/greet/:name", greet);
+
+    try app.get("/json", sendJson);
 
     try app.listen();
 }

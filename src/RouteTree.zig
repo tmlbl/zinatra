@@ -39,7 +39,7 @@ pub fn RouteTree(comptime T: type) type {
         }
 
         pub fn add(self: *Self, path: []const u8, value: T) !void {
-            var it = std.mem.split(u8, path, "/");
+            var it = std.mem.splitAny(u8, path, "/");
             var cur = self;
 
             while (it.next()) |part| {
@@ -63,7 +63,7 @@ pub fn RouteTree(comptime T: type) type {
             if (qix != null) {
                 path = path[1..qix.?];
             }
-            var it = std.mem.split(u8, path, "/");
+            var it = std.mem.splitAny(u8, path, "/");
             var cur = self;
 
             while (it.next()) |part| {

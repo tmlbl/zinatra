@@ -13,7 +13,7 @@ pub fn queryStringParser(ctx: *context.Context) !void {
 
         // Extract query string parameters
         const query = ctx.req.head.target[qix.? + 1 ..];
-        var pairs = std.mem.split(u8, query, "&");
+        var pairs = std.mem.splitAny(u8, query, "&");
         while (pairs.next()) |pair| {
             const eix = std.mem.indexOf(u8, pair, "=");
             // skip if there is no = character
