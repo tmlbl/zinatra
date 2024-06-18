@@ -1,5 +1,5 @@
 const std = @import("std");
-const zin = @import("../../src/App.zig");
+const zin = @import("zinatra");
 
 var static = zin.Static{};
 
@@ -17,7 +17,8 @@ pub fn main() !void {
 
     const buf = try allocator.alloc(u8, 1024);
     defer allocator.free(buf);
-    const cwd = try std.os.getcwd(buf);
+    const cwdLen = std.os.linux.getcwd(buf.ptr, buf.len);
+    const cwd = buf[0..cwdLen];
 
     std.log.debug("serving files from {s}...", .{cwd});
     static.init(cwd);

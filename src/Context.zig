@@ -49,33 +49,26 @@ pub const Context = struct {
         if (stat.kind != .file) {
             return error.FileNotFound;
         }
-        self.res.transfer_encoding = .{ .content_length = stat.size };
 
         // get file suffix and set content-type
         const suffix = std.fs.path.extension(path);
         const mt = mime.getMimeMap().get(suffix);
         if (mt != null) {
-            try self.res.write("Content-Type: ");
-            try self.res.write(mt.?);
-            try self.res.write("\n");
+            try self.headers.append(.{ .name = "Content-Type", .value = mt.? });
         }
 
-        // allocate a transfer buffer
-        // TODO: this should probably be from a buffer pool, or use one of the
-        // built-in buffered writer types
-        var buf = try self.res.allocator.alloc(u8, std.mem.page_size);
-        defer self.res.allocator.free(buf);
+        const buf = try self.allocator().alloc(u8, std.mem.page_size);
+        defer self.allocator().free(buf);
 
-        // send the respone
-        try self.res.send();
-        while (true) {
-            const n_read = try f.read(buf);
-            if (n_read == 0) {
-                break;
-            }
-            _ = try self.res.writer().write(buf[0..n_read]);
-        }
-        try self.res.finish();
+        var response = self.req.respondStreaming(.{
+            .send_buffer = buf,
+            .content_length = stat.size,
+            .respond_options = .{
+                .extra_headers = self.headers.items,
+            },
+        });
+
+        try response.writer().writeFile(f);
     }
 
     pub fn statusText(self: *Context, status: std.http.Status, msg: []const u8) !void {
