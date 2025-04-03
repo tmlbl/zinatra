@@ -1,0 +1,5 @@
+.{
+    .name = "zinatra",
+    .version = "0.1.0",
+    .description = "A minimal HTTP framework with a familiar API",
+}
