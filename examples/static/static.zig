@@ -17,8 +17,8 @@ pub fn main() !void {
 
     const buf = try allocator.alloc(u8, 1024);
     defer allocator.free(buf);
-    const cwdLen = std.os.linux.getcwd(buf.ptr, buf.len);
-    const cwd = buf[0..cwdLen];
+
+    const cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
 
     std.log.debug("serving files from {s}...", .{cwd});
     static.init(cwd);

@@ -57,7 +57,7 @@ pub const Context = struct {
             try self.headers.append(.{ .name = "Content-Type", .value = mt.? });
         }
 
-        const buf = try self.allocator().alloc(u8, std.mem.page_size);
+        const buf = try self.allocator().alloc(u8, 4096);
         defer self.allocator().free(buf);
 
         var response = self.req.respondStreaming(.{
@@ -69,6 +69,7 @@ pub const Context = struct {
         });
 
         try response.writer().writeFile(f);
+        try response.end();
     }
 
     pub fn statusText(self: *Context, status: std.http.Status, msg: []const u8) !void {

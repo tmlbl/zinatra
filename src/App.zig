@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const router = @import("./RouteTree.zig");
 const context = @import("./Context.zig");
@@ -129,11 +130,13 @@ pub const App = struct {
     }
 
     pub fn listen(self: *App) !void {
-        _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &.{
-            .handler = .{ .handler = &App.onSigint },
-            .mask = std.os.linux.empty_sigset,
-            .flags = (std.os.linux.SA.SIGINFO | std.os.linux.SA.RESTART),
-        }, null);
+        if (builtin.target.os.tag == .linux) {
+            _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &.{
+                .handler = .{ .handler = &App.onSigint },
+                .mask = std.os.linux.empty_sigset,
+                .flags = (std.os.linux.SA.SIGINFO | std.os.linux.SA.RESTART),
+            }, null);
+        }
 
         self.listener = try self.addr.listen(.{
             .reuse_address = true,
