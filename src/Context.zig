@@ -102,4 +102,9 @@ pub const Context = struct {
         try response.writer().writeFile(f);
         try response.end();
     }
+
+    pub fn fmt(self: *Context, status: std.http.Status, comptime fstr: []const u8, value: anytype) !void {
+        const msg = try std.fmt.allocPrint(self.allocator(), fstr, value);
+        try self.text(status, msg);
+    }
 };
