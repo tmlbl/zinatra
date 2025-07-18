@@ -7,26 +7,44 @@ pub const mw = @import("./middleware.zig");
 
 pub const Context = context.Context;
 pub const Handler = context.Handler;
+pub const Error = context.Error;
 pub const ErrorHandler = *const fn (*Context, anyerror) anyerror!void;
 pub const Static = @import("./Static.zig");
 
 var handle_requests = true;
 
 pub const Options = struct {
-    allocator: std.mem.Allocator,
+    allocator: std.mem.Allocator = std.heap.page_allocator,
     n_workers: usize = 0,
     host: []const u8 = "0.0.0.0",
     port: u16 = 3737,
     errorHandler: ErrorHandler = defaultErrorHandler,
 };
 
+pub fn new(opts: Options) !*App {
+    return App.init(opts);
+}
+
 fn defaultErrorHandler(ctx: *Context, err: anyerror) !void {
-    const msg = try std.fmt.allocPrint(
-        ctx.allocator(),
-        "internal error: {any}",
-        .{err},
-    );
-    try ctx.statusText(std.http.Status.internal_server_error, msg);
+    switch (err) {
+        Error.ParseError => {
+            const msg = try std.fmt.allocPrint(
+                ctx.allocator(),
+                "failed to parse body",
+                .{},
+            );
+            try ctx.text(.bad_request, msg);
+            return;
+        },
+        else => {
+            const msg = try std.fmt.allocPrint(
+                ctx.allocator(),
+                "internal error: {any}",
+                .{err},
+            );
+            try ctx.text(.internal_server_error, msg);
+        },
+    }
 }
 
 const RouterMap = std.AutoHashMap(std.http.Method, *router.RouteTree(Handler));
@@ -54,7 +72,7 @@ pub const App = struct {
         app.addr = try std.net.Address.parseIp4(opts.host, opts.port);
         app.n_workers = opts.n_workers;
         if (app.n_workers == 0) {
-            app.n_workers = try std.Thread.getCpuCount();
+            app.n_workers = try std.Thread.getCpuCount() * 2;
         }
 
         app.routers = RouterMap.init(opts.allocator);
@@ -141,10 +159,11 @@ pub const App = struct {
         self.listener = try self.addr.listen(.{
             .reuse_address = true,
         });
-        std.log.debug("listening on {}...", .{self.addr});
+        std.log.debug("listener started on {}", .{self.addr});
 
         self.read_buffer = try self.allocator.alloc(u8, 4096);
 
+        std.log.debug("starting {} workers", .{self.n_workers});
         var threads = std.ArrayList(std.Thread).init(self.allocator);
         for (0..self.n_workers) |_| {
             const t = try std.Thread.spawn(.{}, App.runServer, .{self});
@@ -199,7 +218,7 @@ pub const App = struct {
                 app.errorHandler(&ctx, e) catch unreachable;
             };
         } else {
-            ctx.statusText(std.http.Status.not_found, "not found") catch unreachable;
+            ctx.text(.not_found, "not found") catch unreachable;
         }
 
         for (app.post_middleware.items) |m| {

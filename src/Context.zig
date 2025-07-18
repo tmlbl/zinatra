@@ -6,6 +6,10 @@ pub const Request = std.http.Server.Request;
 pub const Response = std.http.Server.Response;
 pub const Handler = *const fn (*Context) anyerror!void;
 
+pub const Error = error{
+    ParseError,
+};
+
 pub const Context = struct {
     arena: std.heap.ArenaAllocator,
     req: *Request,
@@ -18,11 +22,21 @@ pub const Context = struct {
         self.arena.deinit();
     }
 
+    /// Access the arena allocator for the current request
     pub fn allocator(self: *Context) std.mem.Allocator {
         return self.arena.allocator();
     }
 
-    pub fn json(self: *Context, value: anytype) !void {
+    /// Respond with a body of type text/plain
+    pub fn text(self: *Context, status: std.http.Status, msg: []const u8) !void {
+        try self.req.respond(msg, .{
+            .status = status,
+            .extra_headers = self.headers.items,
+        });
+    }
+
+    /// Respond with a value serialized to JSON
+    pub fn json(self: *Context, status: std.http.Status, value: anytype) !void {
         try self.headers.append(.{ .name = "Content-Type", .value = "application/json" });
 
         var out = std.ArrayList(u8).init(self.allocator());
@@ -31,14 +45,31 @@ pub const Context = struct {
         try std.json.stringify(value, .{}, out.writer());
 
         try self.req.respond(out.items, .{
+            .status = status,
             .extra_headers = self.headers.items,
         });
     }
 
-    pub fn text(self: *Context, msg: []const u8) !void {
-        try self.statusText(std.http.Status.ok, msg);
+    /// Parse the request body as JSON into type T
+    pub fn parseJson(self: *Context, comptime T: type) !T {
+        const reader = try self.req.reader();
+        const size = self.req.head.content_length.?;
+        const data = try reader.readAllAlloc(self.allocator(), size);
+
+        const parsed = std.json.parseFromSlice(
+            T,
+            self.allocator(),
+            data,
+            .{},
+        ) catch {
+            return Error.ParseError;
+        };
+
+        return parsed.value;
     }
 
+    /// Send a static file as the response. The MIME type will be determined
+    /// from the file extension
     pub fn file(self: *Context, path: []const u8) !void {
         var f = try std.fs.openFileAbsolute(path, .{});
         defer f.close();
@@ -70,14 +101,5 @@ pub const Context = struct {
 
         try response.writer().writeFile(f);
         try response.end();
-    }
-
-    pub fn statusText(self: *Context, status: std.http.Status, msg: []const u8) !void {
-        try self.req.respond(msg, .{
-            .status = status,
-            .extra_headers = &.{
-                .{ .name = "Content-Type", .value = "text/plain" },
-            },
-        });
     }
 };

@@ -9,14 +9,25 @@ fn greet(ctx: *zin.Context) !void {
     // per-request allocations without calling free
     const msg = try std.fmt.allocPrint(ctx.allocator(), "Hello, {s}!", .{name});
     // Context helper methods for common response types
-    try ctx.text(msg);
+    try ctx.text(.ok, msg);
 }
 
 // zin.Context provides shortcuts for common cases, like sending JSON
 fn sendJson(ctx: *zin.Context) !void {
-    try ctx.json(.{
+    try ctx.json(.ok, .{
         .foo = "bar",
     });
+}
+
+const Person = struct {
+    name: []const u8,
+    age: usize,
+};
+
+fn receiveJson(ctx: *zin.Context) !void {
+    const person = try ctx.parseJson(Person);
+    std.log.debug("name: {s} age: {d}", .{ person.name, person.age });
+    try ctx.json(.ok, person);
 }
 
 // Middleware functions have the same function signature as route handlers
@@ -25,9 +36,7 @@ fn defaultHeaders(ctx: *zin.Context) !void {
 }
 
 pub fn main() !void {
-    var app = try zin.App.init(.{
-        .allocator = std.heap.page_allocator,
-    });
+    var app = try zin.new(.{});
     defer app.deinit();
 
     // optionally add query string parameters to route parameters map
@@ -39,6 +48,7 @@ pub fn main() !void {
     try app.get("/greet/:name", greet);
 
     try app.get("/json", sendJson);
+    try app.post("/json", receiveJson);
 
     try app.listen();
 }
