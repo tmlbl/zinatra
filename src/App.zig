@@ -230,7 +230,7 @@ pub const App = struct {
 };
 
 fn testHandler(ctx: *Context) !void {
-    try ctx.text("hello");
+    try ctx.text(.ok, "hello");
 }
 
 test "create an app" {
