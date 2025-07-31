@@ -10,6 +10,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    lib_mod.linkSystemLibrary("openssl", .{});
+
     const lib = b.addLibrary(.{
         .linkage = .static,
         .name = "zinatra",

@@ -1,5 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const c = @cImport({
+    @cInclude("openssl/ssl.h");
+});
 
 const router = @import("./RouteTree.zig");
 const Context = @import("./Context.zig");
@@ -139,7 +142,7 @@ pub const App = struct {
         try app.addWithMethod(std.http.Method.OPTIONS, path, handler);
     }
 
-    pub fn listen(self: *App) !void {
+    fn setUpListener(self: *App) !void {
         if (builtin.target.os.tag == .linux) {
             _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &.{
                 .handler = .{ .handler = &App.onSigint },
@@ -152,6 +155,10 @@ pub const App = struct {
             .reuse_address = true,
         });
         std.log.debug("listener started on {}", .{self.addr});
+    }
+
+    pub fn listen(self: *App) !void {
+        try self.setUpListener();
 
         std.log.debug("starting {} workers", .{self.n_workers});
         var threads = std.ArrayList(std.Thread).init(self.allocator);
@@ -176,6 +183,134 @@ pub const App = struct {
             handleRequest(self, &req);
 
             conn.stream.close();
+        }
+    }
+
+    pub fn listenTls(self: *App, certPath: []const u8, keyPath: []const u8) !void {
+        const settings = c.OPENSSL_INIT_new();
+        if (settings == null) {
+            return error.SSL_NULL_SETTINGS;
+        }
+
+        const ret = c.OPENSSL_init_ssl(0, settings.?);
+        if (ret != 1) {
+            return error.SSL_INIT_FAILED;
+        }
+
+        const method = c.TLS_server_method();
+        if (method == null) {
+            return error.NoMethod;
+        }
+        const ctx = c.SSL_CTX_new(method.?);
+        if (ctx == null) {
+            return error.CreateContextFailed;
+        }
+
+        // Load cert and key
+        const certPathZ = try std.fmt.allocPrintZ(self.allocator, "{s}", .{certPath});
+        if (c.SSL_CTX_use_certificate_file(ctx, certPathZ.ptr, c.SSL_FILETYPE_PEM) <= 0) {
+            return error.CertificateLoadFailed;
+        }
+
+        const keyPathZ = try std.fmt.allocPrintZ(self.allocator, "{s}", .{keyPath});
+        if (c.SSL_CTX_use_PrivateKey_file(ctx, keyPathZ.ptr, c.SSL_FILETYPE_PEM) <= 0) {
+            return error.KeyLoadFailed;
+        }
+
+        try self.setUpListener();
+        std.log.debug("starting {} workers", .{self.n_workers});
+        var threads = std.ArrayList(std.Thread).init(self.allocator);
+        for (0..self.n_workers) |_| {
+            const t = try std.Thread.spawn(.{}, App.runServerTls, .{ self, ctx });
+            try threads.append(t);
+        }
+        for (threads.items) |t| {
+            t.join();
+        }
+    }
+
+    fn runServerTls(self: *App, ctx: ?*c.SSL_CTX) !void {
+        const readBuf = try self.allocator.alloc(u8, 8192);
+        defer self.allocator.free(readBuf);
+
+        while (handle_requests) {
+            var conn = try self.listener.accept();
+
+            const realSock = conn.stream.handle;
+
+            var sv: [2]std.c.fd_t = undefined;
+            if (std.c.socketpair(std.c.AF.UNIX, std.c.SOCK.STREAM, 0, &sv) == -1) {
+                return error.SockPairFailed;
+            }
+
+            conn.stream.handle = sv[1];
+
+            const ssl = c.SSL_new(ctx);
+            if (ssl == null) {
+                std.log.err("ssl new failed", .{});
+                conn.stream.close();
+                continue;
+            }
+
+            _ = c.SSL_set_fd(ssl, realSock);
+            if (c.SSL_accept(ssl) != 1) {
+                std.log.err("ssl accept failed", .{});
+                c.SSL_free(ssl);
+                conn.stream.close();
+                continue;
+            }
+
+            const pid = try std.posix.fork();
+            if (pid == 0) {
+                const buf = try self.allocator.alloc(u8, 4096);
+                defer self.allocator.free(buf);
+
+                const bufLen: c_int = @intCast(buf.len);
+
+                var pollFds = try self.allocator.alloc(std.posix.pollfd, 2);
+                pollFds[0] = std.posix.pollfd{
+                    .fd = realSock,
+                    .events = std.posix.POLL.IN,
+                    .revents = 0,
+                };
+                pollFds[1] = std.posix.pollfd{
+                    .fd = sv[0],
+                    .events = std.posix.POLL.IN,
+                    .revents = 0,
+                };
+
+                while (true) {
+                    _ = try std.posix.poll(pollFds, 10);
+
+                    if ((pollFds[0].revents & std.posix.POLL.IN) != 0) {
+                        const read = c.SSL_read(ssl, buf.ptr, bufLen);
+                        if (read <= 0) {
+                            continue;
+                        }
+                        _ = try std.posix.write(sv[0], buf[0..@intCast(read)]);
+                    }
+
+                    if ((pollFds[1].revents & std.posix.POLL.IN) != 0) {
+                        const read = try std.posix.read(sv[0], buf);
+                        if (read == 0) {
+                            break;
+                        }
+                        const written = c.SSL_write(ssl, buf.ptr, @intCast(read));
+                        if (written <= 0) {
+                            break;
+                        }
+                    }
+                }
+
+                if (c.SSL_shutdown(ssl) != 1) {
+                    std.log.err("ssl shutdown failed", .{});
+                }
+                c.SSL_free(ssl);
+            } else {
+                var server = std.http.Server.init(conn, readBuf);
+                var req = try server.receiveHead();
+                handleRequest(self, &req);
+            }
         }
     }
 
