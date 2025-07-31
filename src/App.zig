@@ -177,9 +177,12 @@ pub const App = struct {
     fn runServer(self: *App) !void {
         while (handle_requests) {
             const conn = try self.listener.accept();
+
             var server = std.http.Server.init(conn, self.read_buffer);
             var req = try server.receiveHead();
             handleRequest(self, &req);
+
+            conn.stream.close();
         }
     }
 
@@ -201,6 +204,11 @@ pub const App = struct {
             .headers = std.ArrayList(std.http.Header).init(arena.allocator()),
         };
         defer ctx.deinit();
+
+        ctx.headers.append(.{
+            .name = "Connection",
+            .value = "close",
+        }) catch unreachable;
 
         // Run middleware
         for (app.pre_middleware.items) |m| {
