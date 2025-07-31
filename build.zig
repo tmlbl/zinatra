@@ -15,9 +15,11 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("zinatra", .{
+    const mod = b.addModule("zinatra", .{
         .root_source_file = .{ .cwd_relative = "src/App.zig" },
+        .link_libc = true,
     });
+    mod.linkSystemLibrary("openssl", .{});
 
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
