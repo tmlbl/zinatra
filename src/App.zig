@@ -58,7 +58,6 @@ pub const App = struct {
 
     routers: RouterMap,
 
-    read_buffer: []u8,
     addr: std.net.Address,
     n_workers: usize = 1,
 
@@ -77,13 +76,10 @@ pub const App = struct {
 
         app.routers = RouterMap.init(opts.allocator);
 
-        app.read_buffer = try app.allocator.alloc(u8, 4096);
-
         return app;
     }
 
     pub fn deinit(self: *App) void {
-        self.allocator.free(self.read_buffer);
         var it = self.routers.iterator();
         while (it.next()) |entry| {
             entry.value_ptr.*.deinit();
@@ -161,8 +157,6 @@ pub const App = struct {
         });
         std.log.debug("listener started on {}", .{self.addr});
 
-        self.read_buffer = try self.allocator.alloc(u8, 4096);
-
         std.log.debug("starting {} workers", .{self.n_workers});
         var threads = std.ArrayList(std.Thread).init(self.allocator);
         for (0..self.n_workers) |_| {
@@ -175,10 +169,13 @@ pub const App = struct {
     }
 
     fn runServer(self: *App) !void {
+        const readBuf = try self.allocator.alloc(u8, 8192);
+        defer self.allocator.free(readBuf);
+
         while (handle_requests) {
             const conn = try self.listener.accept();
 
-            var server = std.http.Server.init(conn, self.read_buffer);
+            var server = std.http.Server.init(conn, readBuf);
             var req = try server.receiveHead();
             handleRequest(self, &req);
 
