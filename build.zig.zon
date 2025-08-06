@@ -1,1 +1,1 @@
-.{ .name = .zinatra, .version = "0.1.0", .fingerprint = 0x2b53ddf5d0749372, .description = "A minimal HTTP framework with a familiar API", .paths = .{ "src", "build.zig", "build.zig.zon" } }
+.{ .name = .zinatra, .version = "0.1.1", .fingerprint = 0x2b53ddf5d0749372, .description = "A minimal HTTP framework with a familiar API", .paths = .{ "src", "build.zig", "build.zig.zon" } }
