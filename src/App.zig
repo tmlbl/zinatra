@@ -3,13 +3,11 @@ const builtin = @import("builtin");
 
 const router = @import("./RouteTree.zig");
 const context = @import("./Context.zig");
-pub const mw = @import("./middleware.zig");
 
-pub const Context = context.Context;
-pub const Handler = context.Handler;
-pub const Error = context.Error;
-pub const ErrorHandler = *const fn (*Context, anyerror) anyerror!void;
-pub const Static = @import("./Static.zig");
+const Context = context.Context;
+const Handler = context.Handler;
+const Error = context.Error;
+const ErrorHandler = *const fn (*Context, anyerror) anyerror!void;
 
 var handle_requests = true;
 

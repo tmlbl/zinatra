@@ -2,12 +2,9 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-
     const optimize = b.standardOptimizeOption(.{});
 
-    const zinatra = b.addModule("zinatra", .{
-        .root_source_file = .{ .cwd_relative = "../../src/App.zig" },
-    });
+    const zinatra = b.dependency("zinatra", .{});
 
     const exe = b.addExecutable(.{
         .name = "greeter",
@@ -16,7 +13,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    exe.root_module.addImport("zinatra", zinatra);
+    exe.root_module.addImport("zinatra", zinatra.module("zinatra"));
 
     b.installArtifact(exe);
 }
