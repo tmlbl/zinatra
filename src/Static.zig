@@ -1,7 +1,6 @@
 const std = @import("std");
 const http = std.http;
-const context = @import("./Context.zig");
-const Context = context.Context;
+const Context = @import("./Context.zig");
 const mime = @import("./mime.zig");
 
 const Self = @This();

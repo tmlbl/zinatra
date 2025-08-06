@@ -2,12 +2,10 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const router = @import("./RouteTree.zig");
-const context = @import("./Context.zig");
+const Context = @import("./Context.zig");
+pub const Handler = *const fn (*Context) anyerror!void;
 
-const Context = context.Context;
-const Handler = context.Handler;
-const Error = context.Error;
-const ErrorHandler = *const fn (*Context, anyerror) anyerror!void;
+pub const ErrorHandler = *const fn (*Context, anyerror) anyerror!void;
 
 var handle_requests = true;
 
@@ -25,7 +23,7 @@ pub fn new(opts: Options) !*App {
 
 fn defaultErrorHandler(ctx: *Context, err: anyerror) !void {
     switch (err) {
-        Error.ParseError => {
+        Context.Error.ParseError => {
             const msg = try std.fmt.allocPrint(
                 ctx.allocator(),
                 "failed to parse body",

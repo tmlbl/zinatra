@@ -1,11 +1,11 @@
 const std = @import("std");
-const context = @import("./Context.zig");
+const Context = @import("./Context.zig");
 
 // middleware to parse key-value pairs from the request target and add them to
 // the params map in Context.
 // If a query string parameter has the same name as a route parameter, or is a
 // duplicate, it will be ignored
-pub fn queryStringParser(ctx: *context.Context) !void {
+pub fn queryStringParser(ctx: *Context) !void {
     var path = ctx.req.head.target;
     const qix = std.mem.indexOf(u8, path, "?");
     if (qix != null) {
