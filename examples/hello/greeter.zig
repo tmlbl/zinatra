@@ -35,6 +35,13 @@ fn defaultHeaders(ctx: *zin.Context) !void {
     try ctx.headers.append(.{ .name = "server", .value = "zin/v0.1.0" });
 }
 
+fn auth(ctx: *zin.Context) !void {
+    const authorization = try ctx.getHeader("Authorization");
+    if (authorization.len == 0) {
+        try ctx.text(.unauthorized, "missing authorization header");
+    }
+}
+
 pub fn main() !void {
     var app = try zin.new(.{});
     defer app.deinit();
@@ -43,6 +50,7 @@ pub fn main() !void {
     try app.use(zin.mw.queryStringParser);
 
     try app.use(defaultHeaders);
+    try app.use(auth);
 
     // use classic route templating syntax to register handlers
     try app.get("/greet/:name", greet);

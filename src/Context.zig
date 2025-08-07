@@ -4,16 +4,39 @@ arena: std.heap.ArenaAllocator,
 req: *std.http.Server.Request,
 params: std.StringHashMap([]const u8),
 headers: std.ArrayList(std.http.Header),
+requestHeaders: std.StringHashMap([]const u8),
 
 pub fn deinit(self: *Context) void {
     self.params.deinit();
     self.headers.deinit();
+    self.requestHeaders.deinit();
     self.arena.deinit();
 }
 
 /// Access the arena allocator for the current request
 pub fn allocator(self: *Context) std.mem.Allocator {
     return self.arena.allocator();
+}
+
+/// Retrieve the value of a request header
+pub fn getHeader(self: *Context, name: []const u8) ![]const u8 {
+    if (self.requestHeaders.count() == 0) {
+        var it = self.req.iterateHeaders();
+        while (it.next()) |header| {
+            try self.requestHeaders.put(
+                try std.ascii.allocLowerString(self.allocator(), header.name),
+                try self.allocator().dupe(u8, header.value),
+            );
+        }
+    }
+
+    const lowerName = try std.ascii.allocLowerString(self.allocator(), name);
+    const value = self.requestHeaders.get(lowerName);
+    if (value != null) {
+        return value.?;
+    } else {
+        return "";
+    }
 }
 
 /// Respond with a body of type text/plain
