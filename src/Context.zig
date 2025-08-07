@@ -65,16 +65,18 @@ pub fn json(self: *Context, status: std.http.Status, value: anytype) !void {
 /// Parse the request body as JSON into type T
 pub fn parseJson(self: *Context, comptime T: type) !T {
     const reader = try self.req.reader();
-    const size = self.req.head.content_length.?;
-    const data = try reader.readAllAlloc(self.allocator(), size);
+    var jsonReader = std.json.Reader(4096, std.io.AnyReader).init(
+        self.allocator(),
+        reader,
+    );
 
-    const parsed = std.json.parseFromSlice(
+    const parsed = std.json.parseFromTokenSource(
         T,
         self.allocator(),
-        data,
+        &jsonReader,
         .{},
     ) catch {
-        return Error.ParseError;
+        return error.ParseError;
     };
 
     return parsed.value;
