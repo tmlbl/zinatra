@@ -23,8 +23,8 @@ pub fn init(opts: Options) !*App {
     var app = try opts.allocator.create(App);
 
     app.allocator = opts.allocator;
-    app.pre_middleware = std.ArrayList(Handler).init(app.allocator);
-    app.post_middleware = std.ArrayList(Handler).init(app.allocator);
+    app.pre_middleware = try std.ArrayList(Handler).initCapacity(app.allocator, 128);
+    app.post_middleware = try std.ArrayList(Handler).initCapacity(app.allocator, 64);
     app.errorHandler = opts.errorHandler;
     app.addr = try std.net.Address.parseIp4(opts.host, opts.port);
     app.n_workers = opts.n_workers;
@@ -43,6 +43,8 @@ pub fn deinit(self: *App) void {
         entry.value_ptr.*.deinit();
     }
     self.routers.deinit();
+    self.pre_middleware.deinit(self.allocator);
+    self.post_middleware.deinit(self.allocator);
     self.allocator.destroy(self);
 }
 
@@ -59,13 +61,13 @@ pub fn deinit(self: *App) void {
 ///     }
 /// }
 pub fn use(app: *App, handler: Handler) !void {
-    try app.pre_middleware.append(handler);
+    try app.pre_middleware.appendBounded(handler);
 }
 
 /// After is like use, but for middleware that runs after a request has completed.
 /// Useful for things like logging and metrics.
 pub fn after(app: *App, handler: Handler) !void {
-    try app.post_middleware.append(handler);
+    try app.post_middleware.appendBounded(handler);
 }
 
 fn addWithMethod(app: *App, m: std.http.Method, path: []const u8, h: Handler) !void {
@@ -133,13 +135,16 @@ pub fn listen(self: *App) !void {
     self.listener = try self.addr.listen(.{
         .reuse_address = true,
     });
-    std.log.debug("listener started on {}", .{self.addr});
+    std.log.debug("listener started on port {d}", .{self.addr.getPort()});
 
     std.log.debug("starting {} workers", .{self.n_workers});
-    var threads = std.ArrayList(std.Thread).init(self.allocator);
+    var threads = try std.ArrayList(std.Thread).initCapacity(
+        self.allocator,
+        self.n_workers,
+    );
     for (0..self.n_workers) |_| {
         const t = try std.Thread.spawn(.{}, App.runServer, .{self});
-        try threads.append(t);
+        threads.appendAssumeCapacity(t);
     }
     for (threads.items) |t| {
         t.join();
@@ -150,10 +155,15 @@ fn runServer(self: *App) !void {
     const readBuf = try self.allocator.alloc(u8, 8192);
     defer self.allocator.free(readBuf);
 
-    while (true) {
-        const conn = try self.listener.accept();
+    const writeBuf = try self.allocator.alloc(u8, 8192);
+    defer self.allocator.free(writeBuf);
 
-        var server = std.http.Server.init(conn, readBuf);
+    while (true) {
+        var conn = try self.listener.accept();
+        var reader = conn.stream.reader(readBuf);
+        var writer = conn.stream.writer(writeBuf);
+
+        var server = std.http.Server.init(reader.interface(), &writer.interface);
         var req = try server.receiveHead();
         handleRequest(self, &req);
 
@@ -172,16 +182,10 @@ fn handleRequest(app: *App, req: *std.http.Server.Request) void {
 
     // Build context
     var arena = std.heap.ArenaAllocator.init(app.allocator);
-    var ctx = Context{
-        .arena = arena,
-        .req = req,
-        .params = params,
-        .headers = std.ArrayList(std.http.Header).init(arena.allocator()),
-        .requestHeaders = std.StringHashMap([]const u8).init(arena.allocator()),
-    };
+    var ctx = Context.init(&arena, req, params) catch unreachable;
     defer ctx.deinit();
 
-    ctx.headers.append(.{
+    ctx.headers.appendBounded(.{
         .name = "Connection",
         .value = "close",
     }) catch unreachable;
@@ -192,7 +196,7 @@ fn handleRequest(app: *App, req: *std.http.Server.Request) void {
             app.errorHandler(&ctx, e) catch unreachable;
         };
         // Check if middleware terminated the request
-        if (ctx.req.server.state == .ready) {
+        if (ctx.req.server.out.end > 0) {
             return;
         }
     }

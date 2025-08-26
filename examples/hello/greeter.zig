@@ -32,7 +32,7 @@ fn receiveJson(ctx: *zin.Context) !void {
 
 // Middleware functions have the same function signature as route handlers
 fn defaultHeaders(ctx: *zin.Context) !void {
-    try ctx.headers.append(.{ .name = "server", .value = "zin/v0.1.0" });
+    try ctx.addHeader(.{ .name = "server", .value = "zin/v0.1.0" });
 }
 
 fn auth(ctx: *zin.Context) !void {

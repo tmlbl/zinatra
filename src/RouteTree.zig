@@ -19,7 +19,7 @@ pub fn RouteTree(comptime T: type) type {
             var self = try a.create(Self);
             self.a = a;
             self.name = buf;
-            self.children = std.ArrayList(*Self).init(a);
+            self.children = try std.ArrayList(*Self).initCapacity(a, 64);
             self.value = value;
 
             if (buf[0] == ':') {
@@ -33,7 +33,7 @@ pub fn RouteTree(comptime T: type) type {
             for (self.children.items) |child| {
                 child.deinit();
             }
-            self.children.deinit();
+            self.children.deinit(self.a);
             self.a.free(self.name);
             self.a.destroy(self);
         }
@@ -48,7 +48,7 @@ pub fn RouteTree(comptime T: type) type {
                 }
                 if (cur.getChild(part, true) == null) {
                     const new = try Self.init(self.a, part, null);
-                    try cur.children.append(new);
+                    try cur.children.appendBounded(new);
                     cur = new;
                 } else {
                     cur = cur.getChild(part, true).?;
