@@ -125,10 +125,10 @@ pub fn options(app: *App, path: []const u8, handler: Handler) !void {
 /// Start the application
 pub fn listen(self: *App) !void {
     if (builtin.target.os.tag == .linux) {
-        _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &.{
+        _ = std.posix.sigaction(std.posix.SIG.INT, &.{
             .handler = .{ .handler = &App.onSigint },
-            .mask = std.os.linux.empty_sigset,
-            .flags = (std.os.linux.SA.SIGINFO | std.os.linux.SA.RESTART),
+            .mask = std.posix.sigemptyset(),
+            .flags = (std.posix.SA.SIGINFO | std.posix.SA.RESTART),
         }, null);
     }
 
@@ -171,7 +171,7 @@ fn runServer(self: *App) !void {
     }
 }
 
-fn onSigint(_: c_int) callconv(.C) void {
+fn onSigint(_: c_int) callconv(.c) void {
     std.os.linux.exit_group(0);
 }
 
